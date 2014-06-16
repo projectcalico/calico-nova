@@ -38,6 +38,7 @@ VIF_TYPE_802_QBH = '802.1qbh'
 VIF_TYPE_MLNX_DIRECT = 'mlnx_direct'
 VIF_TYPE_MIDONET = 'midonet'
 VIF_TYPE_OTHER = 'other'
+VIF_TYPE_ROUTED = 'routed'
 
 # Constants for dictionary keys in the 'vif_details' field in the VIF
 # class
