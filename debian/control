@@ -1,7 +1,7 @@
 Source: nova
 Section: net
 Priority: extra
-Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Maintainer: Project Calico Maintainers <maintainers@projectcalico.org>
 XSBC-Original-Maintainer: Openstack Maintainers <openstack@lists.launchpad.net>
 Uploaders: Soren Hansen <soren@ubuntu.com>, Thomas Goirand <zigo@debian.org>
 Build-Depends:
