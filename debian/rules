@@ -61,6 +61,3 @@ override_dh_installlogrotate:
 	dh_installlogrotate
 	dh_installlogrotate --name=nova-manage
 	dh_installlogrotate --name=nova-dhcpbridge
-
-override_dh_installchangelogs:
-	dh_installchangelogs ChangeLog
