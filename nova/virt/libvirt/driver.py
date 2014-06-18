@@ -854,14 +854,10 @@ class LibvirtDriver(driver.ComputeDriver):
         for vif in network_info:
             self.vif_driver.plug(instance, vif)
 
-    def unplug_vifs(self, instance, network_info, ignore_errors=False):
+    def unplug_vifs(self, instance, network_info):
         """Unplug VIFs from networks."""
         for vif in network_info:
-            try:
-                self.vif_driver.unplug(instance, vif)
-            except exception.NovaException:
-                if not ignore_errors:
-                    raise
+            self.vif_driver.unplug(instance, vif)
 
     def _teardown_container(self, instance):
         inst_path = libvirt_utils.get_instance_path(instance)
@@ -990,7 +986,7 @@ class LibvirtDriver(driver.ComputeDriver):
     def cleanup(self, context, instance, network_info, block_device_info=None,
                 destroy_disks=True):
         self._undefine_domain(instance)
-        self.unplug_vifs(instance, network_info, ignore_errors=True)
+        self.unplug_vifs(instance, network_info)
         retry = True
         while retry:
             try:
@@ -3090,7 +3086,7 @@ class LibvirtDriver(driver.ComputeDriver):
         disk_mapping = disk_info['mapping']
         img_meta_prop = image_meta.get('properties', {}) if image_meta else {}
 
-        CONSOLE = "console=tty0 console=ttyS0"
+        CONSOLE = "console=tty0 console=ttyS0 console=ttyAMA0"
 
         guest = vconfig.LibvirtConfigGuest()
         guest.virt_type = CONF.libvirt.virt_type
