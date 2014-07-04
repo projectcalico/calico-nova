@@ -1,0 +1,8 @@
+description "OpenStack Nova XVP VncProxy Server"
+
+start on stopped rc RUNLEVEL=[2345]
+stop on runlevel [S016]
+
+respawn
+
+exec su -s /bin/sh -c "exec /usr/bin/nova-xvpvncproxy --logfile /var/log/nova/xvpvncproxy.log" nova

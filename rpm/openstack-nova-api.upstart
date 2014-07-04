@@ -1,0 +1,8 @@
+description "OpenStack Nova API Server"
+
+start on stopped rc RUNLEVEL=[2345]
+stop on runlevel [S016]
+
+respawn
+
+exec su -s /bin/sh -c "exec /usr/bin/nova-api --logfile /var/log/nova/api.log" nova
