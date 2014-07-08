@@ -1,7 +1,7 @@
 %global with_doc %{!?_without_doc:1}%{?_without_doc:0}
 
 Name:             openstack-nova
-Version:          2014.1.1
+Version:          2014.1.1_calico0.1
 Release:          1%{?dist}
 Summary:          OpenStack Compute (nova)
 
@@ -900,6 +900,9 @@ fi
 %endif
 
 %changelog
+* Tue Jul 08 2014 Neil Jerram <nj@metaswitch.com> - 2014.1.1_calico0.1-1
+- Implement new 'ROUTED' interface type.
+
 * Fri Jun 13 2014 Nikola Đipanov <ndipanov@redhat.com> 2014.1.1-1
 - Update to latest stable/icehouse 2014.1.1 release
 

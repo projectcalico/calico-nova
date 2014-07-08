@@ -1,6 +1,6 @@
 Metadata-Version: 1.1
 Name: nova
-Version: 2014.1.1
+Version: 2014.1.1_calico0.1
 Summary: Cloud computing fabric controller
 Home-page: http://www.openstack.org/
 Author: OpenStack
