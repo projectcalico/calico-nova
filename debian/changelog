@@ -1,3 +1,9 @@
+nova (1:2014.1-0ubuntu1.2calico0.1) trusty; urgency=medium
+
+  * Implement new 'ROUTED' interface type.
+
+ -- Neil Jerram <Neil.Jerram@metaswitch.com>  Mon, 10 Nov 2014 22:30:08 +0000
+
 nova (1:2014.1-0ubuntu1.2) trusty-security; urgency=medium
 
   * SECURITY UPDATE: specify /etc/nova/rootwrap.conf for use with
