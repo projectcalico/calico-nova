@@ -1,4 +1,4 @@
-nova (1:2014.1-0ubuntu1.2-calico0.1) trusty; urgency=medium
+nova (1:2014.1-0ubuntu1.2calico0.1) trusty; urgency=medium
 
   * Implement new 'ROUTED' interface type.
   * Don't try to install a ChangeLog, as we don't generate one.
