@@ -1,4 +1,5 @@
 # Ubuntu specific patches below here. Note these can be dropped eventually.
+block-device-mapping-config.patch
 fix-requirements.patch
 skip_ipv6_test.patch
 arm-console-patch.patch
