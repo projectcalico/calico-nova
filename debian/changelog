@@ -1,3 +1,11 @@
+nova (1:2014.1.3-0ubuntu2) trusty; urgency=medium
+
+  [ Corey Bryant ]
+  * d/p/block-device-mapping-config.patch: Make the block device mapping
+    retries configurable (LP: #1376927).
+
+ -- Chuck Short <zulcss@ubuntu.com>  Wed, 12 Nov 2014 09:22:45 -0500
+
 nova (1:2014.1.3-0ubuntu1.1calico0.1) trusty; urgency=medium
 
   * Implement new 'ROUTED' interface type.

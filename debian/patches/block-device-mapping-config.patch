@@ -1,0 +1,122 @@
+Description: Make the block device mapping retries configurable
+Author: Akash Gangil <akashg1611@gmail.com>
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/nova/+bug/1376927
+Forwarded: https://review.openstack.org/#/c/129276/
+diff --git a/nova/compute/manager.py b/nova/compute/manager.py
+index 260a2b7..45e143c 100644
+--- a/nova/compute/manager.py
++++ b/nova/compute/manager.py
+@@ -120,6 +120,10 @@ compute_opts = [
+     cfg.IntOpt('network_allocate_retries',
+                default=0,
+                help="Number of times to retry network allocation on failures"),
++    cfg.IntOpt('block_device_allocate_retries',
++               default=180,
++               help='Number of times to retry block device'
++                    ' allocation on failures')
+     ]
+ 
+ interval_opts = [
+@@ -153,7 +157,11 @@ interval_opts = [
+     cfg.IntOpt('instance_delete_interval',
+                default=300,
+                help=('Interval in seconds for retrying failed instance file '
+-                     'deletes'))
++                     'deletes')),
++    cfg.IntOpt('block_device_allocate_retries_interval',
++               default=1,
++               help='Waiting time interval (seconds) between block'
++                    ' device allocation retries on failures')
+ ]
+ 
+ timeout_opts = [
+@@ -1135,24 +1143,21 @@ class ComputeManager(manager.Manager):
+                                                              instance)
+         return network_info
+ 
+-    def _await_block_device_map_created(self, context, vol_id, max_tries=180,
+-                                        wait_between=1):
++    def _await_block_device_map_created(self, context, vol_id):
+         # TODO(yamahata): creating volume simultaneously
+         #                 reduces creation time?
+         # TODO(yamahata): eliminate dumb polling
+-        # TODO(harlowja): make the max_tries configurable or dynamic?
+         attempts = 0
+         start = time.time()
+-        while attempts < max_tries:
++        while attempts < CONF.block_device_allocate_retries:
+             volume = self.volume_api.get(context, vol_id)
+             volume_status = volume['status']
+             if volume_status not in ['creating', 'downloading']:
+                 if volume_status != 'available':
+                     LOG.warn(_("Volume id: %s finished being created but was"
+                                " not set as 'available'"), vol_id)
+-                # NOTE(harlowja): return how many attempts were tried
+                 return attempts + 1
+-            greenthread.sleep(wait_between)
++            greenthread.sleep(CONF.block_device_allocate_retries_interval)
+             attempts += 1
+         # NOTE(harlowja): Should only happen if we ran out of attempts
+         raise exception.VolumeNotCreated(volume_id=vol_id,
+diff --git a/nova/tests/compute/test_compute.py b/nova/tests/compute/test_compute.py
+index f1e334d..81765b4 100644
+--- a/nova/tests/compute/test_compute.py
++++ b/nova/tests/compute/test_compute.py
+@@ -34,6 +34,8 @@ from oslo import messaging
+ import six
+ from testtools import matchers as testtools_matchers
+ 
++from eventlet import greenthread
++
+ import nova
+ from nova import availability_zones
+ from nova import block_device
+@@ -378,6 +380,8 @@ class ComputeVolumeTestCase(BaseTestCase):
+                        lambda *a, **kw: None)
+         self.stubs.Set(self.compute.volume_api, 'check_attach',
+                        lambda *a, **kw: None)
++        self.stubs.Set(greenthread, 'sleep',
++                       lambda *a, **kw: None)
+ 
+         def store_cinfo(context, *args, **kwargs):
+             self.cinfo = jsonutils.loads(args[-1].get('connection_info'))
+@@ -438,7 +442,9 @@ class ComputeVolumeTestCase(BaseTestCase):
+             mock_get_by_id.assert_called_once_with(self.context, 'fake')
+             self.assertTrue(mock_attach.called)
+ 
+-    def test_await_block_device_created_to_slow(self):
++    def test_await_block_device_created_too_slow(self):
++        self.flags(block_device_allocate_retries=2)
++        self.flags(block_device_allocate_retries_interval=0.1)
+ 
+         def never_get(context, vol_id):
+             return {
+@@ -449,13 +455,15 @@ class ComputeVolumeTestCase(BaseTestCase):
+         self.stubs.Set(self.compute.volume_api, 'get', never_get)
+         self.assertRaises(exception.VolumeNotCreated,
+                           self.compute._await_block_device_map_created,
+-                          self.context, '1', max_tries=2, wait_between=0.1)
++                          self.context, '1')
+ 
+     def test_await_block_device_created_slow(self):
+         c = self.compute
++        self.flags(block_device_allocate_retries=4)
++        self.flags(block_device_allocate_retries_interval=0.1)
+ 
+         def slow_get(context, vol_id):
+-            while self.fetched_attempts < 2:
++            if self.fetched_attempts < 2:
+                 self.fetched_attempts += 1
+                 return {
+                     'status': 'creating',
+@@ -467,9 +475,7 @@ class ComputeVolumeTestCase(BaseTestCase):
+             }
+ 
+         self.stubs.Set(c.volume_api, 'get', slow_get)
+-        attempts = c._await_block_device_map_created(self.context, '1',
+-                                                     max_tries=4,
+-                                                     wait_between=0.1)
++        attempts = c._await_block_device_map_created(self.context, '1')
+         self.assertEqual(attempts, 3)
+ 
+     def test_boot_volume_serial(self):
