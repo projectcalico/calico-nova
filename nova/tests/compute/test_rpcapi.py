@@ -621,7 +621,8 @@ class ComputeRpcAPITestCase(test.TestCase):
 
     def test_rollback_live_migration_at_destination(self):
         self._test_compute_api('rollback_live_migration_at_destination',
-                'cast', instance=self.fake_instance, host='host')
+                'cast', instance=self.fake_instance, host='host',
+                destroy_disks=True, migrate_data=None, version='3.23')
 
         # NOTE(russellb) Havana compat
         self.flags(compute='havana', group='upgrade_levels')

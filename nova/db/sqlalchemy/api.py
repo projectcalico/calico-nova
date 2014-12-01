@@ -1021,9 +1021,18 @@ def floating_ip_update(context, address, values):
     session = get_session()
     with session.begin():
         float_ip_ref = _floating_ip_get_by_address(context, address, session)
+
+        # NOTE(rpodolyaka): fixed_ip might as well be a unified object instance
+        # or a model instance selected in another session - in both cases we
+        # would receive an error trying to add it into the current session
+        if 'fixed_ip' in values:
+            fixed_ip = session.query(models.FixedIp).get(values['fixed_ip'].id)
+            values['fixed_ip'] = fixed_ip
+
         float_ip_ref.update(values)
         try:
             float_ip_ref.save(session=session)
+            return float_ip_ref
         except db_exc.DBDuplicateEntry:
             raise exception.FloatingIpExists(address=values['address'])
 

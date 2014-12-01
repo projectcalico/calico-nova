@@ -3429,24 +3429,39 @@ class ComputeTestCase(BaseTestCase):
         self.compute.run_instance(self.context, instance, {}, {}, None, None,
                 None, True, None, False)
 
-    def test_run_instance_reschedules_on_anti_affinity_violation(self):
+    def _create_server_group(self):
         group_instance = self._create_fake_instance_obj(
                 params=dict(host=self.compute.host))
 
         instance_group = instance_group_obj.InstanceGroup(self.context)
+        instance_group.user_id = self.user_id
+        instance_group.project_id = self.project_id
+        instance_group.name = 'messi'
         instance_group.uuid = str(uuid.uuid4())
         instance_group.members = [group_instance.uuid]
         instance_group.policies = ['anti-affinity']
         instance_group.create()
+        return instance_group
 
+    def _run_instance_reschedules_on_anti_affinity_violation(self, group,
+                                                             hint):
         instance = jsonutils.to_primitive(self._create_fake_instance())
-
-        filter_properties = {'scheduler_hints': {'group': instance_group.uuid}}
+        filter_properties = {'scheduler_hints': {'group': hint}}
         self.assertRaises(exception.RescheduledException,
                           self.compute._build_instance,
                           self.context, {}, filter_properties,
                           [], None, None, True, None, instance,
                           None, False)
+
+    def test_run_instance_reschedules_on_anti_affinity_violation_by_name(self):
+        group = self._create_server_group()
+        self._run_instance_reschedules_on_anti_affinity_violation(group,
+                group.name)
+
+    def test_run_instance_reschedules_on_anti_affinity_violation_by_uuid(self):
+        group = self._create_server_group()
+        self._run_instance_reschedules_on_anti_affinity_violation(group,
+                group.uuid)
 
     def test_instance_set_to_error_on_uncaught_exception(self):
         # Test that instance is set to error state when exception is raised.
@@ -3717,7 +3732,7 @@ class ComputeTestCase(BaseTestCase):
         self._check_locked_by(instance_uuid, None)
 
     def _test_state_revert(self, instance, operation, pre_task_state,
-                           kwargs=None):
+                           kwargs=None, vm_state=None):
         if kwargs is None:
             kwargs = {}
 
@@ -3747,6 +3762,8 @@ class ComputeTestCase(BaseTestCase):
 
         # Fetch the instance's task_state and make sure it reverted to None.
         instance = db.instance_get_by_uuid(self.context, instance['uuid'])
+        if vm_state:
+            self.assertEqual(instance.vm_state, vm_state)
         self.assertIsNone(instance["task_state"])
 
     def test_state_revert(self):
@@ -3761,6 +3778,10 @@ class ComputeTestCase(BaseTestCase):
                                  'reboot_type': 'SOFT'}),
             ("stop_instance", task_states.POWERING_OFF),
             ("start_instance", task_states.POWERING_ON),
+            ("terminate_instance", task_states.DELETING,
+                                     {'bdms': [],
+                                     'reservations': []},
+                                     vm_states.ERROR),
             ("soft_delete_instance", task_states.SOFT_DELETING,
                                      {'reservations': []}),
             ("restore_instance", task_states.RESTORING),
@@ -4084,7 +4105,8 @@ class ComputeTestCase(BaseTestCase):
             return connection_info
         self.stubs.Set(cinder.API, "initialize_connection", fake_init_conn)
 
-        def fake_attach(self, context, volume_id, instance_uuid, device_name):
+        def fake_attach(self, context, volume_id, instance_uuid, device_name,
+                        mode='rw'):
             volume['instance_uuid'] = instance_uuid
             volume['device_name'] = device_name
         self.stubs.Set(cinder.API, "attach", fake_attach)
@@ -4977,7 +4999,7 @@ class ComputeTestCase(BaseTestCase):
         fake_notifier.NOTIFICATIONS = []
         # start test
         self.mox.ReplayAll()
-        migrate_data = {'is_shared_storage': False}
+        migrate_data = {'is_shared_instance_path': False}
         ret = self.compute.pre_live_migration(c, instance=instance,
                                               block_migration=False, disk=None,
                                               migrate_data=migrate_data)
@@ -5049,7 +5071,8 @@ class ComputeTestCase(BaseTestCase):
         self.compute.compute_rpcapi.remove_volume_connection(
                 c, updated_instance, 'vol2-id', dest_host)
         self.compute.compute_rpcapi.rollback_live_migration_at_destination(
-                c, updated_instance, dest_host)
+                c, updated_instance, dest_host,
+                destroy_disks=True, migrate_data={})
 
         # start test
         self.mox.ReplayAll()
@@ -5066,7 +5089,7 @@ class ComputeTestCase(BaseTestCase):
         instance.host = self.compute.host
         dest = 'desthost'
 
-        migrate_data = {'is_shared_storage': False}
+        migrate_data = {'is_shared_instance_path': False}
 
         self.mox.StubOutWithMock(self.compute.compute_rpcapi,
                                  'pre_live_migration')
@@ -5159,7 +5182,7 @@ class ComputeTestCase(BaseTestCase):
 
         # start test
         self.mox.ReplayAll()
-        migrate_data = {'is_shared_storage': False}
+        migrate_data = {'is_shared_instance_path': False}
         self.compute._post_live_migration(c, inst_ref, dest,
                                           migrate_data=migrate_data)
         self.assertIn('cleanup', result)
@@ -5359,7 +5382,8 @@ class ComputeTestCase(BaseTestCase):
         self.mox.StubOutWithMock(self.compute.driver,
                                  'rollback_live_migration_at_destination')
         self.compute.driver.rollback_live_migration_at_destination(c,
-                instance, [], {'block_device_mapping': []})
+                instance, [], {'block_device_mapping': []},
+                destroy_disks=True, migrate_data=None)
 
         # start test
         self.mox.ReplayAll()

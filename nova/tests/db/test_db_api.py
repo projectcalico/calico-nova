@@ -44,6 +44,8 @@ from nova.db.sqlalchemy import api as sqlalchemy_api
 from nova.db.sqlalchemy import models
 from nova.db.sqlalchemy import utils as db_utils
 from nova import exception
+from nova import objects
+from nova.openstack.common.db import api as db_api
 from nova.openstack.common.db import exception as db_exc
 from nova.openstack.common import jsonutils
 from nova.openstack.common import timeutils
@@ -4091,6 +4093,27 @@ class FloatingIpTestCase(test.TestCase, ModelsObjectComparatorMixin):
                           db.floating_ip_update,
                           self.ctxt, float_ip2['address'],
                           {'address': float_ip1['address']})
+
+    def test_floating_ip_update_from_object(self):
+        ctxt = context.get_admin_context()
+
+        fixed_addr_1 = '1.1.1.1'
+        fixed_id_1 = db.fixed_ip_create(ctxt, {'address': fixed_addr_1})['id']
+
+        fixed_addr_2 = '2.2.2.2'
+        fixed_id_2 = db.fixed_ip_create(ctxt, {'address': fixed_addr_2})['id']
+
+        float_addr = '8.8.8.8'
+        float_id = db.floating_ip_create(
+            ctxt, {'address': float_addr, 'fixed_ip_id': fixed_id_1})['id']
+
+        float_obj = objects.floating_ip.FloatingIP.get_by_id(ctxt, float_id)
+        self.assertEqual('1.1.1.1', str(float_obj.fixed_ip.address))
+
+        fixed_obj = objects.fixed_ip.FixedIP.get_by_id(ctxt, fixed_id_2)
+        float_obj.fixed_ip = fixed_obj
+        float_obj.save()
+        self.assertEqual('2.2.2.2', str(float_obj.fixed_ip.address))
 
 
 class InstanceDestroyConstraints(test.TestCase):

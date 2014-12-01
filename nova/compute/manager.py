@@ -1222,14 +1222,14 @@ class ComputeManager(manager.Manager):
         # make sure that starting the instance here doesn't violate the policy.
 
         scheduler_hints = filter_properties.get('scheduler_hints') or {}
-        group_uuid = scheduler_hints.get('group')
-        if not group_uuid:
+        group_hint = scheduler_hints.get('group')
+        if not group_hint:
             return
 
-        @utils.synchronized(group_uuid)
-        def _do_validation(context, instance, group_uuid):
-            group = instance_group_obj.InstanceGroup.get_by_uuid(context,
-                                                                 group_uuid)
+        @utils.synchronized(group_hint)
+        def _do_validation(context, instance, group_hint):
+            group = instance_group_obj.InstanceGroup.get_by_hint(
+                        context, group_hint)
             if 'anti-affinity' not in group.policies:
                 return
 
@@ -1240,7 +1240,7 @@ class ComputeManager(manager.Manager):
                         instance_uuid=instance['uuid'],
                         reason=msg)
 
-        _do_validation(context, instance, group_uuid)
+        _do_validation(context, instance, group_hint)
 
     def _build_instance(self, context, request_spec, filter_properties,
             requested_networks, injected_files, admin_password, is_first_time,
@@ -1860,19 +1860,17 @@ class ComputeManager(manager.Manager):
                         image, filter_properties, admin_password,
                         injected_files, requested_networks, security_groups,
                         block_device_mapping)
-            except exception.InstanceNotFound:
+            except (exception.InstanceNotFound,
+                    exception.UnexpectedDeletingTaskStateError):
                 msg = _('Instance disappeared during build.')
                 LOG.debug(msg, instance=instance)
+                self._cleanup_allocated_networks(context, instance,
+                        requested_networks)
             except exception.BuildAbortException as e:
                 LOG.exception(e.format_message(), instance=instance)
                 self._cleanup_allocated_networks(context, instance,
                         requested_networks)
                 self._set_instance_error_state(context, instance.uuid)
-            except exception.UnexpectedDeletingTaskStateError as e:
-                # The instance is deleting, so clean up but don't error.
-                LOG.debug(e.format_message(), instance=instance)
-                self._cleanup_allocated_networks(context, instance,
-                        requested_networks)
             except Exception:
                 # Should not reach here.
                 msg = _('Unexpected build failure, not rescheduling build.')
@@ -2006,9 +2004,12 @@ class ComputeManager(manager.Manager):
 
         try:
             yield resources
-        except Exception:
+        except Exception as exc:
             with excutils.save_and_reraise_exception() as ctxt:
-                LOG.exception(_('Instance failed to spawn'), instance=instance)
+                if not isinstance(exc, (exception.InstanceNotFound,
+                    exception.UnexpectedDeletingTaskStateError)):
+                        LOG.exception(_('Instance failed to spawn'),
+                                instance=instance)
                 # Make sure the async call finishes
                 if network_info is not None:
                     network_info.wait(do_raise=False)
@@ -2026,11 +2027,19 @@ class ComputeManager(manager.Manager):
             requested_networks):
         try:
             self._deallocate_network(context, instance, requested_networks)
-            instance.system_metadata['network_allocated'] = 'False'
-            instance.save()
         except Exception:
             msg = _('Failed to deallocate networks')
             LOG.exception(msg, instance=instance)
+            return
+
+        instance.system_metadata['network_allocated'] = 'False'
+        try:
+            instance.save()
+        except exception.InstanceNotFound:
+            # NOTE(alaski): It's possible that we're cleaning up the networks
+            # because the instance was deleted.  If that's the case then this
+            # exception will be raised by instance.save()
+            pass
 
     def _cleanup_build_resources(self, context, instance,
             block_device_mapping):
@@ -2218,6 +2227,7 @@ class ComputeManager(manager.Manager):
                                 system_meta)
 
     @wrap_exception()
+    @reverts_task_state
     @wrap_instance_event
     @wrap_instance_fault
     def terminate_instance(self, context, instance, bdms, reservations):
@@ -4524,6 +4534,39 @@ class ComputeManager(manager.Manager):
                                    self._rollback_live_migration,
                                    block_migration, migrate_data)
 
+    def _live_migration_cleanup_flags(self, block_migration, migrate_data):
+        '''Determine whether disks or intance path need to be cleaned up after
+        live migration (at source on success, at destination on rollback)
+
+        Block migration needs empty image at destination host before migration
+        starts, so if any failure occurs, any empty images has to be deleted.
+
+        Also Volume backed live migration w/o shared storage needs to delete
+        newly created instance-xxx dir on the destination as a part of its
+        rollback process
+
+        :param block_migration: if true, it was a block migration
+        :param migrate_data: implementation specific data
+        :returns: (bool, bool) -- do_cleanup, destroy_disks
+        '''
+        # NOTE(angdraug): block migration wouldn't have been allowed if either
+        #                 block storage or instance path were shared
+        is_shared_block_storage = not block_migration
+        is_shared_instance_path = not block_migration
+        if migrate_data:
+            is_shared_block_storage = migrate_data.get(
+                    'is_shared_block_storage', is_shared_block_storage)
+            is_shared_instance_path = migrate_data.get(
+                    'is_shared_instance_path', is_shared_instance_path)
+
+        # No instance booting at source host, but instance dir
+        # must be deleted for preparing next block migration
+        # must be deleted for preparing next live migration w/o shared storage
+        do_cleanup = block_migration or not is_shared_instance_path
+        destroy_disks = not is_shared_block_storage
+
+        return (do_cleanup, destroy_disks)
+
     @wrap_exception()
     @wrap_instance_fault
     def _post_live_migration(self, ctxt, instance,
@@ -4589,16 +4632,15 @@ class ComputeManager(manager.Manager):
         self.compute_rpcapi.post_live_migration_at_destination(ctxt,
                 instance, block_migration, dest)
 
-        # No instance booting at source host, but instance dir
-        # must be deleted for preparing next block migration
-        # must be deleted for preparing next live migration w/o shared storage
-        is_shared_storage = True
-        if migrate_data:
-            is_shared_storage = migrate_data.get('is_shared_storage', True)
-        if block_migration or not is_shared_storage:
-            self.driver.cleanup(ctxt, instance, network_info)
+        do_cleanup, destroy_disks = self._live_migration_cleanup_flags(
+                block_migration, migrate_data)
+
+        if do_cleanup:
+            self.driver.cleanup(ctxt, instance, network_info,
+                                destroy_disks=destroy_disks,
+                                migrate_data=migrate_data)
         else:
-            # self.driver.destroy() usually performs  vif unplugging
+            # self.driver.cleanup() usually performs  vif unplugging
             # but we must do it explicitly here when block_migration
             # is false, as the network devices at the source must be
             # torn down
@@ -4721,27 +4763,22 @@ class ComputeManager(manager.Manager):
         self._notify_about_instance_usage(context, instance,
                                           "live_migration._rollback.start")
 
-        # Block migration needs empty image at destination host
-        # before migration starts, so if any failure occurs,
-        # any empty images has to be deleted.
-        # Also Volume backed live migration w/o shared storage needs to delete
-        # newly created instance-xxx dir on the destination as a part of its
-        # rollback process
-        is_volume_backed = False
-        is_shared_storage = True
-        if migrate_data:
-            is_volume_backed = migrate_data.get('is_volume_backed', False)
-            is_shared_storage = migrate_data.get('is_shared_storage', True)
-        if block_migration or (is_volume_backed and not is_shared_storage):
-            self.compute_rpcapi.rollback_live_migration_at_destination(context,
-                    instance, dest)
+        do_cleanup, destroy_disks = self._live_migration_cleanup_flags(
+                block_migration, migrate_data)
+
+        if do_cleanup:
+            self.compute_rpcapi.rollback_live_migration_at_destination(
+                    context, instance, dest, destroy_disks=destroy_disks,
+                    migrate_data=migrate_data)
 
         self._notify_about_instance_usage(context, instance,
                                           "live_migration._rollback.end")
 
     @wrap_exception()
     @wrap_instance_fault
-    def rollback_live_migration_at_destination(self, context, instance):
+    def rollback_live_migration_at_destination(self, context, instance,
+                                               destroy_disks=True,
+                                               migrate_data=None):
         """Cleaning up image directory that is created pre_live_migration.
 
         :param context: security context
@@ -4760,8 +4797,9 @@ class ComputeManager(manager.Manager):
         #             from remote volumes if necessary
         block_device_info = self._get_instance_volume_block_device_info(
                             context, instance)
-        self.driver.rollback_live_migration_at_destination(context, instance,
-                        network_info, block_device_info)
+        self.driver.rollback_live_migration_at_destination(
+                        context, instance, network_info, block_device_info,
+                        destroy_disks=destroy_disks, migrate_data=migrate_data)
         self._notify_about_instance_usage(
                         context, instance, "live_migration.rollback.dest.end",
                         network_info=network_info)

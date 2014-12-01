@@ -297,7 +297,7 @@ class ComputeDriver(object):
         raise NotImplementedError()
 
     def destroy(self, context, instance, network_info, block_device_info=None,
-                destroy_disks=True):
+                destroy_disks=True, migrate_data=None):
         """Destroy the specified instance from the Hypervisor.
 
         If the instance is not found (for example if networking failed), this
@@ -311,11 +311,12 @@ class ComputeDriver(object):
         :param block_device_info: Information about block devices that should
                                   be detached from the instance.
         :param destroy_disks: Indicates if disks should be destroyed
+        :param migrate_data: implementation specific params
         """
         raise NotImplementedError()
 
     def cleanup(self, context, instance, network_info, block_device_info=None,
-                destroy_disks=True):
+                destroy_disks=True, migrate_data=None):
         """Cleanup the instance resources .
 
         Instance should have been destroyed from the Hypervisor before calling
@@ -328,7 +329,7 @@ class ComputeDriver(object):
         :param block_device_info: Information about block devices that should
                                   be detached from the instance.
         :param destroy_disks: Indicates if disks should be destroyed
-
+        :param migrate_data: implementation specific params
         """
         raise NotImplementedError()
 
@@ -657,13 +658,18 @@ class ComputeDriver(object):
 
     def rollback_live_migration_at_destination(self, ctxt, instance_ref,
                                                network_info,
-                                               block_device_info):
+                                               block_device_info,
+                                               destroy_disks=True,
+                                               migrate_data=None):
         """Clean up destination node after a failed live migration.
 
         :param ctxt: security context
         :param instance_ref: instance object that was being migrated
         :param network_info: instance network information
         :param block_device_info: instance block device information
+        :param destroy_disks:
+            if true, destroy disks at destination during cleanup
+        :param migrate_data: implementation specific params
 
         """
         raise NotImplementedError()

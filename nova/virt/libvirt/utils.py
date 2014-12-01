@@ -251,46 +251,6 @@ def create_lvm_image(vg, lv, size, sparse=False):
     execute(*cmd, run_as_root=True, attempts=3)
 
 
-def import_rbd_image(*args):
-    execute('rbd', 'import', *args)
-
-
-def _run_rbd(*args, **kwargs):
-    total = list(args)
-
-    if CONF.libvirt.rbd_user:
-        total.extend(['--id', str(CONF.libvirt.rbd_user)])
-    if CONF.libvirt.images_rbd_ceph_conf:
-        total.extend(['--conf', str(CONF.libvirt.images_rbd_ceph_conf)])
-
-    return utils.execute(*total, **kwargs)
-
-
-def list_rbd_volumes(pool):
-    """List volumes names for given ceph pool.
-
-    :param pool: ceph pool name
-    """
-    try:
-        out, err = _run_rbd('rbd', '-p', pool, 'ls')
-    except processutils.ProcessExecutionError:
-        # No problem when no volume in rbd pool
-        return []
-
-    return [line.strip() for line in out.splitlines()]
-
-
-def remove_rbd_volumes(pool, *names):
-    """Remove one or more rbd volume."""
-    for name in names:
-        rbd_remove = ['rbd', '-p', pool, 'rm', name]
-        try:
-            _run_rbd(*rbd_remove, attempts=3, run_as_root=True)
-        except processutils.ProcessExecutionError:
-            LOG.warn(_("rbd remove %(name)s in pool %(pool)s failed"),
-                     {'name': name, 'pool': pool})
-
-
 def get_volume_group_info(vg):
     """Return free/used/total space info for a volume group in bytes
 
@@ -647,10 +607,11 @@ def get_fs_info(path):
             'used': used}
 
 
-def fetch_image(context, target, image_id, user_id, project_id, max_size=0):
+def fetch_image(context, target, image_id, user_id, project_id, max_size=0,
+                backend=None):
     """Grab image."""
     images.fetch_to_raw(context, image_id, target, user_id, project_id,
-                        max_size=max_size)
+                        max_size=max_size, backend=backend)
 
 
 def get_instance_path(instance, forceold=False, relative=False):

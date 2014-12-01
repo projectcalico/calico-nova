@@ -74,6 +74,7 @@ from nova.virt.libvirt import config as vconfig
 from nova.virt.libvirt import driver as libvirt_driver
 from nova.virt.libvirt import firewall
 from nova.virt.libvirt import imagebackend
+from nova.virt.libvirt import rbd_utils  # noqa
 from nova.virt.libvirt import utils as libvirt_utils
 from nova.virt import netutils
 
@@ -139,6 +140,14 @@ _fake_NodeDevXml = \
           </capability>
         </capability>
     </device>"""}
+
+
+def mocked_bdm(id, bdm_info):
+    bdm_mock = mock.MagicMock()
+    bdm_mock.__getitem__ = lambda s, k: bdm_info[k]
+    bdm_mock.get = lambda *k, **kw: bdm_info.get(*k, **kw)
+    bdm_mock.id = id
+    return bdm_mock
 
 
 def _concurrency(signal, wait, done, target, is_block_dev=False):
@@ -1043,8 +1052,11 @@ class LibvirtConnTestCase(test.TestCase):
         instance_ref = db.instance_create(self.context, self.test_instance)
         conn_info = {'driver_volume_type': 'fake'}
         info = {'block_device_mapping': [
-                  {'connection_info': conn_info, 'mount_device': '/dev/vdc'},
-                  {'connection_info': conn_info, 'mount_device': '/dev/vdd'}]}
+                mocked_bdm(1, {'connection_info': conn_info,
+                               'mount_device': '/dev/vdc'}),
+                mocked_bdm(2, {'connection_info': conn_info,
+                               'mount_device': '/dev/vdd'}),
+                ]}
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref, info)
@@ -1056,6 +1068,8 @@ class LibvirtConnTestCase(test.TestCase):
         self.assertIsInstance(cfg.devices[3],
                               vconfig.LibvirtConfigGuestDisk)
         self.assertEqual(cfg.devices[3].target_dev, 'vdd')
+        self.assertTrue(info['block_device_mapping'][0].save.called)
+        self.assertTrue(info['block_device_mapping'][1].save.called)
 
     def test_get_guest_config_with_configdrive(self):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
@@ -1096,10 +1110,13 @@ class LibvirtConnTestCase(test.TestCase):
         instance_ref = db.instance_create(self.context, self.test_instance)
         conn_info = {'driver_volume_type': 'fake'}
         bd_info = {'block_device_mapping': [
-                  {'connection_info': conn_info, 'mount_device': '/dev/sdc',
-                   'disk_bus': 'scsi'},
-                  {'connection_info': conn_info, 'mount_device': '/dev/sdd',
-                   'disk_bus': 'scsi'}]}
+                mocked_bdm(1, {'connection_info': conn_info,
+                               'mount_device': '/dev/sdc',
+                               'disk_bus': 'scsi'}),
+                mocked_bdm(2, {'connection_info': conn_info,
+                               'mount_device': '/dev/sdd',
+                               'disk_bus': 'scsi'}),
+                ]}
 
         disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
                                             instance_ref, bd_info, image_meta)
@@ -2206,8 +2223,8 @@ class LibvirtConnTestCase(test.TestCase):
             cpu.model = "Opteron_G4"
             cpu.vendor = "AMD"
 
-            cpu.features.append(vconfig.LibvirtConfigGuestCPUFeature("tm2"))
-            cpu.features.append(vconfig.LibvirtConfigGuestCPUFeature("ht"))
+            cpu.add_feature(vconfig.LibvirtConfigGuestCPUFeature("tm2"))
+            cpu.add_feature(vconfig.LibvirtConfigGuestCPUFeature("ht"))
 
             caps = vconfig.LibvirtConfigCaps()
             caps.host = vconfig.LibvirtConfigCapsHost()
@@ -2235,8 +2252,8 @@ class LibvirtConnTestCase(test.TestCase):
         self.assertEqual(conf.cpu.model, "Opteron_G4")
         self.assertEqual(conf.cpu.vendor, "AMD")
         self.assertEqual(len(conf.cpu.features), 2)
-        self.assertEqual(conf.cpu.features[0].name, "tm2")
-        self.assertEqual(conf.cpu.features[1].name, "ht")
+        self.assertEqual(conf.cpu.features.pop().name, "tm2")
+        self.assertEqual(conf.cpu.features.pop().name, "ht")
 
     def test_get_guest_cpu_config_custom_old(self):
         def get_lib_version_stub():
@@ -3548,6 +3565,10 @@ class LibvirtConnTestCase(test.TestCase):
                 check = (lambda t: t.find('./os/kernel'), None)
             check_list.append(check)
 
+            if expect_kernel:
+                check = (lambda t: "no_timer_check" in t.find('./os/cmdline').
+                         text, hypervisor_type == "qemu")
+                check_list.append(check)
             # Hypervisors that only support vm_mode.HVM and Xen
             # should not produce configuration that results in kernel
             # arguments
@@ -3764,6 +3785,7 @@ class LibvirtConnTestCase(test.TestCase):
         return_value = conn.check_can_live_migrate_destination(self.context,
                 instance_ref, compute_info, compute_info, True)
         self.assertThat({"filename": "file",
+                         'image_type': 'default',
                          'disk_available_mb': 409600,
                          "disk_over_commit": False,
                          "block_migration": True},
@@ -3788,6 +3810,7 @@ class LibvirtConnTestCase(test.TestCase):
         return_value = conn.check_can_live_migrate_destination(self.context,
                 instance_ref, compute_info, compute_info, False)
         self.assertThat({"filename": "file",
+                         "image_type": 'default',
                          "block_migration": False,
                          "disk_over_commit": False,
                          "disk_available_mb": None},
@@ -3825,139 +3848,150 @@ class LibvirtConnTestCase(test.TestCase):
         conn.check_can_live_migrate_destination_cleanup(self.context,
                                                         dest_check_data)
 
-    def test_check_can_live_migrate_source_works_correctly(self):
-        instance_ref = db.instance_create(self.context, self.test_instance)
-        dest_check_data = {"filename": "file",
-                           "block_migration": True,
-                           "disk_over_commit": False,
-                           "disk_available_mb": 1024}
+    def _mock_can_live_migrate_source(self, block_migration=False,
+                                      is_shared_block_storage=False,
+                                      is_shared_instance_path=False,
+                                      disk_available_mb=1024):
+        instance = db.instance_create(self.context, self.test_instance)
+        dest_check_data = {'filename': 'file',
+                           'image_type': 'default',
+                           'block_migration': block_migration,
+                           'disk_over_commit': False,
+                           'disk_available_mb': disk_available_mb}
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
 
-        self.mox.StubOutWithMock(conn, "_check_shared_storage_test_file")
-        conn._check_shared_storage_test_file("file").AndReturn(False)
-        self.mox.StubOutWithMock(conn, "get_instance_disk_info")
-        conn.get_instance_disk_info(instance_ref['name']).AndReturn('[]')
+        self.mox.StubOutWithMock(conn, '_is_shared_block_storage')
+        conn._is_shared_block_storage(instance, dest_check_data).AndReturn(
+                is_shared_block_storage)
+        self.mox.StubOutWithMock(conn, '_is_shared_instance_path')
+        conn._is_shared_instance_path(dest_check_data).AndReturn(
+                is_shared_instance_path)
+
+        return (instance, dest_check_data, conn)
+
+    def test_check_can_live_migrate_source_block_migration(self):
+        instance, dest_check_data, conn = self._mock_can_live_migrate_source(
+                block_migration=True)
 
         self.mox.StubOutWithMock(conn, "_assert_dest_node_has_enough_disk")
         conn._assert_dest_node_has_enough_disk(
-            self.context, instance_ref, dest_check_data['disk_available_mb'],
+            self.context, instance, dest_check_data['disk_available_mb'],
             False)
 
         self.mox.ReplayAll()
-        conn.check_can_live_migrate_source(self.context, instance_ref,
-                                           dest_check_data)
-
-    def test_check_can_live_migrate_source_vol_backed_works_correctly(self):
-        instance_ref = db.instance_create(self.context, self.test_instance)
-        dest_check_data = {"filename": "file",
-                           "block_migration": False,
-                           "disk_over_commit": False,
-                           "disk_available_mb": 1024,
-                           "is_volume_backed": True}
-        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        self.mox.StubOutWithMock(conn, "_check_shared_storage_test_file")
-        conn._check_shared_storage_test_file("file").AndReturn(False)
-        self.mox.StubOutWithMock(conn, "get_instance_disk_info")
-        conn.get_instance_disk_info(instance_ref['name']).AndReturn('[]')
-        self.mox.ReplayAll()
-        ret = conn.check_can_live_migrate_source(self.context, instance_ref,
+        ret = conn.check_can_live_migrate_source(self.context, instance,
                                                  dest_check_data)
         self.assertTrue(type(ret) == dict)
-        self.assertIn('is_shared_storage', ret)
+        self.assertIn('is_shared_block_storage', ret)
+        self.assertIn('is_shared_instance_path', ret)
 
-    def test_check_can_live_migrate_source_vol_backed_w_disk_raises(self):
-        instance_ref = db.instance_create(self.context, self.test_instance)
-        dest_check_data = {"filename": "file",
-                           "block_migration": False,
-                           "disk_over_commit": False,
-                           "disk_available_mb": 1024,
-                           "is_volume_backed": True}
-        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        self.mox.StubOutWithMock(conn, "_check_shared_storage_test_file")
-        conn._check_shared_storage_test_file("file").AndReturn(False)
-        self.mox.StubOutWithMock(conn, "get_instance_disk_info")
-        conn.get_instance_disk_info(instance_ref['name']).AndReturn(
-                '[{"fake_disk_attr": "fake_disk_val"}]')
+    def test_check_can_live_migrate_source_shared_block_storage(self):
+        instance, dest_check_data, conn = self._mock_can_live_migrate_source(
+                is_shared_block_storage=True)
+        self.mox.ReplayAll()
+        conn.check_can_live_migrate_source(self.context, instance,
+                                           dest_check_data)
+
+    def test_check_can_live_migrate_source_shared_instance_path(self):
+        instance, dest_check_data, conn = self._mock_can_live_migrate_source(
+                is_shared_instance_path=True)
+        self.mox.ReplayAll()
+        conn.check_can_live_migrate_source(self.context, instance,
+                                           dest_check_data)
+
+    def test_check_can_live_migrate_source_non_shared_fails(self):
+        instance, dest_check_data, conn = self._mock_can_live_migrate_source()
         self.mox.ReplayAll()
         self.assertRaises(exception.InvalidSharedStorage,
                           conn.check_can_live_migrate_source, self.context,
-                          instance_ref, dest_check_data)
+                          instance, dest_check_data)
 
-    def test_check_can_live_migrate_source_vol_backed_fails(self):
-        instance_ref = db.instance_create(self.context, self.test_instance)
-        dest_check_data = {"filename": "file",
-                           "block_migration": False,
-                           "disk_over_commit": False,
-                           "disk_available_mb": 1024,
-                           "is_volume_backed": False}
-        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        self.mox.StubOutWithMock(conn, "_check_shared_storage_test_file")
-        conn._check_shared_storage_test_file("file").AndReturn(False)
-        self.mox.StubOutWithMock(conn, "get_instance_disk_info")
-        conn.get_instance_disk_info(instance_ref['name']).AndReturn(
-                '[{"fake_disk_attr": "fake_disk_val"}]')
-        self.mox.ReplayAll()
-        self.assertRaises(exception.InvalidSharedStorage,
-                          conn.check_can_live_migrate_source, self.context,
-                          instance_ref, dest_check_data)
-
-    def test_check_can_live_migrate_dest_fail_shared_storage_with_blockm(self):
-        instance_ref = db.instance_create(self.context, self.test_instance)
-        dest_check_data = {"filename": "file",
-                           "block_migration": True,
-                           "disk_over_commit": False,
-                           'disk_available_mb': 1024}
-        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-
-        self.mox.StubOutWithMock(conn, "_check_shared_storage_test_file")
-        conn._check_shared_storage_test_file("file").AndReturn(True)
-        self.mox.StubOutWithMock(conn, "get_instance_disk_info")
-        conn.get_instance_disk_info(instance_ref['name']).AndReturn('[]')
+    def test_check_can_live_migrate_source_shared_block_migration_fails(self):
+        instance, dest_check_data, conn = self._mock_can_live_migrate_source(
+                block_migration=True,
+                is_shared_block_storage=True)
 
         self.mox.ReplayAll()
         self.assertRaises(exception.InvalidLocalStorage,
                           conn.check_can_live_migrate_source,
-                          self.context, instance_ref, dest_check_data)
+                          self.context, instance, dest_check_data)
 
-    def test_check_can_live_migrate_no_shared_storage_no_blck_mig_raises(self):
-        instance_ref = db.instance_create(self.context, self.test_instance)
-        dest_check_data = {"filename": "file",
-                           "block_migration": False,
-                           "disk_over_commit": False,
-                           'disk_available_mb': 1024}
-        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+    def test_check_can_live_migrate_shared_path_block_migration_fails(self):
+        instance, dest_check_data, conn = self._mock_can_live_migrate_source(
+                block_migration=True,
+                is_shared_instance_path=True)
 
-        self.mox.StubOutWithMock(conn, "_check_shared_storage_test_file")
-        conn._check_shared_storage_test_file("file").AndReturn(False)
-        self.mox.StubOutWithMock(conn, "get_instance_disk_info")
-        conn.get_instance_disk_info(instance_ref['name']).AndReturn('[]')
+        self.mox.ReplayAll()
+        self.assertRaises(exception.InvalidLocalStorage,
+                          conn.check_can_live_migrate_source,
+                          self.context, instance, dest_check_data)
 
+    def test_check_can_live_migrate_non_shared_non_block_migration_fails(self):
+        instance, dest_check_data, conn = self._mock_can_live_migrate_source()
         self.mox.ReplayAll()
         self.assertRaises(exception.InvalidSharedStorage,
                           conn.check_can_live_migrate_source,
-                          self.context, instance_ref, dest_check_data)
+                          self.context, instance, dest_check_data)
 
     def test_check_can_live_migrate_source_with_dest_not_enough_disk(self):
-        instance_ref = db.instance_create(self.context, self.test_instance)
-        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-
-        self.mox.StubOutWithMock(conn, "_check_shared_storage_test_file")
-        conn._check_shared_storage_test_file("file").AndReturn(False)
+        instance, dest_check_data, conn = self._mock_can_live_migrate_source(
+                block_migration=True,
+                disk_available_mb=0)
 
         self.mox.StubOutWithMock(conn, "get_instance_disk_info")
-        conn.get_instance_disk_info(instance_ref["name"]).AndReturn(
-                                            '[{"virt_disk_size":2}]')
-        conn.get_instance_disk_info(instance_ref["name"]).AndReturn(
+        conn.get_instance_disk_info(instance["name"]).AndReturn(
                                             '[{"virt_disk_size":2}]')
 
-        dest_check_data = {"filename": "file",
-                           "disk_available_mb": 0,
-                           "block_migration": True,
-                           "disk_over_commit": False}
         self.mox.ReplayAll()
         self.assertRaises(exception.MigrationError,
                           conn.check_can_live_migrate_source,
-                          self.context, instance_ref, dest_check_data)
+                          self.context, instance, dest_check_data)
+
+    def test_is_shared_block_storage_rbd(self):
+        CONF.set_override('images_type', 'rbd', 'libvirt')
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        self.assertTrue(conn._is_shared_block_storage(
+                            'instance', {'image_type': 'rbd'}))
+
+    def test_is_shared_block_storage_non_remote(self):
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        self.assertFalse(conn._is_shared_block_storage(
+                            'instance', {}))
+
+    def test_is_shared_block_storage_rbd_only_source(self):
+        CONF.set_override('images_type', 'rbd', 'libvirt')
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        self.assertFalse(conn._is_shared_block_storage(
+                            'instance', {}))
+
+    def test_is_shared_block_storage_rbd_only_dest(self):
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        self.assertFalse(conn._is_shared_block_storage(
+                            'instance', {'image_type': 'rbd'}))
+
+    def test_is_shared_block_storage_volume_backed(self):
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        with mock.patch.object(conn, 'get_instance_disk_info') as mock_conn:
+            mock_conn.return_value = '[]'
+            self.assertTrue(conn._is_shared_block_storage(
+                {'name': 'name'}, {'is_volume_backed': True}))
+
+    def test_is_shared_block_storage_volume_backed_with_disk(self):
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        with mock.patch.object(conn, 'get_instance_disk_info') as mock_get:
+            mock_get.return_value = '[{"virt_disk_size":2}]'
+            self.assertFalse(conn._is_shared_block_storage(
+                {'name': 'instance_name'}, {'is_volume_backed': True}))
+            mock_get.assert_called_once_with('instance_name')
+
+    def test_is_shared_instance_path(self):
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        with mock.patch.object(
+                conn, '_check_shared_storage_test_file') as mock_check:
+            mock_check.return_value = True
+            self.assertTrue(conn._is_shared_instance_path(
+                {'filename': 'test'}))
+            mock_check.assert_called_once_with('test')
 
     def test_live_migration_raises_exception(self):
         # Confirms recover method is called when exceptions are raised.
@@ -4006,9 +4040,9 @@ class LibvirtConnTestCase(test.TestCase):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
         with mock.patch.object(conn, "destroy") as mock_destroy:
             conn.rollback_live_migration_at_destination("context",
-                    "instance", [], None)
+                    "instance", [], None, True, None)
             mock_destroy.assert_called_once_with("context",
-                    "instance", [], None)
+                    "instance", [], None, True, None)
 
     def _do_test_create_images_and_backing(self, disk_type):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
@@ -4146,7 +4180,8 @@ class LibvirtConnTestCase(test.TestCase):
 
         self.assertRaises(exception.NoBlockMigrationForConfigDriveInLibVirt,
                           conn.pre_live_migration, c, inst_ref, vol, None,
-                          None, {'is_shared_storage': False})
+                          None, {'is_shared_instance_path': False,
+                                 'is_shared_block_storage': False})
 
     def test_pre_live_migration_vol_backed_works_correctly_mocked(self):
         # Creating testdata, using temp dir.
@@ -4182,7 +4217,7 @@ class LibvirtConnTestCase(test.TestCase):
             self.mox.StubOutWithMock(conn, 'plug_vifs')
             conn.plug_vifs(mox.IsA(inst_ref), nw_info)
             self.mox.ReplayAll()
-            migrate_data = {'is_shared_storage': False,
+            migrate_data = {'is_shared_instance_path': False,
                             'is_volume_backed': True,
                             'block_migration': False,
                             'instance_relative_path': inst_ref['name']
@@ -4226,6 +4261,30 @@ class LibvirtConnTestCase(test.TestCase):
         self.stubs.Set(eventlet.greenthread, 'sleep', lambda x: None)
         conn.pre_live_migration(self.context, instance, block_device_info=None,
                                 network_info=[], disk_info={})
+
+    def test_pre_live_migration_with_shared_instance_path(self):
+        migrate_data = {'is_shared_block_storage': False,
+                        'block_migration': False}
+
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        instance = db.instance_create(self.context, self.test_instance)
+        # creating mocks
+        with contextlib.nested(
+            mock.patch.object(conn,
+                              '_create_images_and_backing'),
+            mock.patch.object(conn,
+                              'ensure_filtering_rules_for_instance'),
+            mock.patch.object(conn, 'plug_vifs'),
+        ) as (
+            create_image_mock,
+            rules_mock,
+            plug_mock,
+        ):
+            conn.pre_live_migration(self.context, instance,
+                                    block_device_info=None,
+                                    network_info=[], disk_info={},
+                                    migrate_data=migrate_data)
+            self.assertFalse(create_image_mock.called)
 
     def test_get_instance_disk_info_works_correctly(self):
         # Test data
@@ -5505,38 +5564,16 @@ class LibvirtConnTestCase(test.TestCase):
                     "uuid": "875a8070-d0b9-4949-8b31-104d125c9a64"}
         conn.destroy(self.context, instance, [])
 
-    def test_cleanup_rbd(self):
-        mock = self.mox.CreateMock(libvirt.virDomain)
+    @mock.patch('nova.virt.libvirt.rbd_utils.RBDDriver')
+    def test_cleanup_rbd(self, mock_driver):
+        driver = mock_driver.return_value
+        driver.cleanup_volumes = mock.Mock()
+        fake_instance = {'uuid': '875a8070-d0b9-4949-8b31-104d125c9a64'}
 
-        def fake_lookup_by_name(instance_name):
-            return mock
-
-        def fake_get_info(instance_name):
-            return {'state': power_state.SHUTDOWN, 'id': -1}
-
-        fake_volumes = ['875a8070-d0b9-4949-8b31-104d125c9a64.local',
-                        '875a8070-d0b9-4949-8b31-104d125c9a64.swap',
-                        '875a8070-d0b9-4949-8b31-104d125c9a64',
-                        'wrong875a8070-d0b9-4949-8b31-104d125c9a64']
-        fake_pool = 'fake_pool'
-        fake_instance = {'name': 'fakeinstancename', 'id': 'instanceid',
-                         'uuid': '875a8070-d0b9-4949-8b31-104d125c9a64'}
-
-        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-        self.stubs.Set(conn, '_lookup_by_name', fake_lookup_by_name)
-        self.stubs.Set(conn, 'get_info', fake_get_info)
-
-        self.flags(images_rbd_pool=fake_pool, group='libvirt')
-        self.mox.StubOutWithMock(libvirt_driver.libvirt_utils,
-                                 'remove_rbd_volumes')
-        libvirt_driver.libvirt_utils.remove_rbd_volumes(fake_pool,
-                                                        *fake_volumes[:3])
-
-        self.mox.ReplayAll()
-
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         conn._cleanup_rbd(fake_instance)
 
-        self.mox.VerifyAll()
+        driver.cleanup_volumes.assert_called_with(fake_instance)
 
     def test_destroy_undefines_no_undefine_flags(self):
         mock = self.mox.CreateMock(libvirt.virDomain)
@@ -6887,19 +6924,21 @@ class LibvirtConnTestCase(test.TestCase):
                        '_lookup_by_name',
                        fake_lookup_name)
         block_device_info = {'block_device_mapping': [
-                    {'guest_format': None,
-                     'boot_index': 0,
-                     'mount_device': '/dev/vda',
-                     'connection_info':
-                        {'driver_volume_type': 'iscsi'},
-                     'disk_bus': 'virtio',
-                     'device_type': 'disk',
-                     'delete_on_termination': False}
+                mocked_bdm(1, {'guest_format': None,
+                               'boot_index': 0,
+                               'mount_device': '/dev/vda',
+                               'connection_info':
+                                   {'driver_volume_type': 'iscsi'},
+                               'disk_bus': 'virtio',
+                               'device_type': 'disk',
+                               'delete_on_termination': False}),
                     ]}
         conn.post_live_migration_at_destination(self.context, instance,
                                         network_info, True,
                                         block_device_info=block_device_info)
         self.assertTrue('fake' in self.resultXML)
+        self.assertTrue(
+            block_device_info['block_device_mapping'][0].save.called)
 
     def test_create_without_pause(self):
         self.flags(virt_type='lxc', group='libvirt')
@@ -7441,20 +7480,44 @@ class IptablesFirewallTestCase(test.TestCase):
         self.mox.StubOutWithMock(self.fw,
                                  'add_filters_for_instance',
                                  use_mock_anything=True)
+        self.mox.StubOutWithMock(self.fw.iptables.ipv4['filter'],
+                                 'has_chain')
 
         self.fw.instance_rules(instance_ref,
                                mox.IgnoreArg()).AndReturn((None, None))
         self.fw.add_filters_for_instance(instance_ref, mox.IgnoreArg(),
-                                         mox.IgnoreArg())
+                                         mox.IgnoreArg(), mox.IgnoreArg())
         self.fw.instance_rules(instance_ref,
                                mox.IgnoreArg()).AndReturn((None, None))
+        self.fw.iptables.ipv4['filter'].has_chain(mox.IgnoreArg()
+                                                  ).AndReturn(True)
         self.fw.add_filters_for_instance(instance_ref, mox.IgnoreArg(),
-                                         mox.IgnoreArg())
+                                         mox.IgnoreArg(), mox.IgnoreArg())
         self.mox.ReplayAll()
 
         self.fw.prepare_instance_filter(instance_ref, mox.IgnoreArg())
-        self.fw.instances[instance_ref['id']] = instance_ref
+        self.fw.instance_info[instance_ref['id']] = (instance_ref, None)
         self.fw.do_refresh_security_group_rules("fake")
+
+    def test_do_refresh_security_group_rules_instance_disappeared(self):
+        instance1 = {'id': 1, 'uuid': 'fake-uuid1'}
+        instance2 = {'id': 2, 'uuid': 'fake-uuid2'}
+        self.fw.instance_info = {1: (instance1, 'netinfo1'),
+                                 2: (instance2, 'netinfo2')}
+        mock_filter = mock.MagicMock()
+        with mock.patch.dict(self.fw.iptables.ipv4, {'filter': mock_filter}):
+            mock_filter.has_chain.return_value = False
+            with mock.patch.object(self.fw, 'instance_rules') as mock_ir:
+                mock_ir.return_value = (None, None)
+                self.fw.do_refresh_security_group_rules('secgroup')
+                self.assertEqual(2, mock_ir.call_count)
+            # NOTE(danms): Make sure that it is checking has_chain each time,
+            # continuing to process all the instances, and never adding the
+            # new chains back if has_chain() is False
+            mock_filter.has_chain.assert_has_calls([mock.call('inst-1'),
+                                                    mock.call('inst-2')],
+                                                   any_order=True)
+            self.assertEqual(0, mock_filter.add_chain.call_count)
 
     def test_unfilter_instance_undefines_nwfilter(self):
         admin_ctxt = context.get_admin_context()
@@ -7759,6 +7822,44 @@ class NWFilterTestCase(test.TestCase):
 
         db.instance_destroy(admin_ctxt, instance_ref['uuid'])
 
+    def test_multinic_base_filter_selection(self):
+        fakefilter = NWFilterFakes()
+        self.fw._conn.nwfilterDefineXML = fakefilter.filterDefineXMLMock
+        self.fw._conn.nwfilterLookupByName = fakefilter.nwfilterLookupByName
+
+        instance_ref = self._create_instance()
+        inst_id = instance_ref['id']
+        inst_uuid = instance_ref['uuid']
+
+        self.security_group = self.setup_and_return_security_group()
+
+        db.instance_add_security_group(self.context, inst_uuid,
+                                       self.security_group['id'])
+
+        instance = db.instance_get(self.context, inst_id)
+
+        network_info = _fake_network_info(self.stubs, 2)
+        network_info[0]['network']['subnets'][0]['meta']['dhcp_server'] = \
+            '1.1.1.1'
+
+        self.fw.setup_basic_filtering(instance, network_info)
+
+        def assert_filterref(instance, vif, expected=[]):
+            nic_id = vif['address'].replace(':', '')
+            filter_name = self.fw._instance_filter_name(instance, nic_id)
+            f = fakefilter.nwfilterLookupByName(filter_name)
+            tree = etree.fromstring(f.xml)
+            frefs = [fr.get('filter') for fr in tree.findall('filterref')]
+            self.assertTrue(set(expected) == set(frefs))
+
+        assert_filterref(instance, network_info[0], expected=['nova-base'])
+        assert_filterref(instance, network_info[1], expected=['nova-nodhcp'])
+
+        db.instance_remove_security_group(self.context, inst_uuid,
+                                          self.security_group['id'])
+        self.teardown_security_group()
+        db.instance_destroy(context.get_admin_context(), instance_ref['uuid'])
+
 
 class LibvirtUtilsTestCase(test.TestCase):
     def test_create_image(self):
@@ -7954,7 +8055,7 @@ disk size: 4.4M''', ''))
         user_id = 'fake'
         project_id = 'fake'
         images.fetch_to_raw(context, image_id, target, user_id, project_id,
-                            max_size=0)
+                            max_size=0, backend=None)
 
         self.mox.ReplayAll()
         libvirt_utils.fetch_image(context, target, image_id,

@@ -72,7 +72,33 @@ def fetch(context, image_href, path, _user_id, _project_id, max_size=0):
         image_service.download(context, image_id, dst_path=path)
 
 
-def fetch_to_raw(context, image_href, path, user_id, project_id, max_size=0):
+def direct_fetch(context, image_href, backend):
+    """Allow an image backend to fetch directly from the glance backend.
+
+    :backend: the image backend, which must have a direct_fetch method
+              accepting a list of image locations. This method should raise
+              exceptions.ImageUnacceptable if the image cannot be downloaded
+              directly.
+    """
+    # TODO(jdurgin): improve auth handling as noted in fetch()
+    image_service, image_id = glance.get_remote_image_service(context,
+                                                              image_href)
+    locations = image_service._get_locations(context, image_id)
+    image_meta = image_service.show(context, image_id)
+
+    LOG.debug(_('Image locations are: %(locs)s') % {'locs': locations})
+    backend.direct_fetch(image_id, image_meta, locations)
+
+
+def fetch_to_raw(context, image_href, path, user_id, project_id, max_size=0,
+                 backend=None):
+    if backend:
+        try:
+            direct_fetch(context, image_href, backend)
+            return
+        except exception.ImageUnacceptable:
+            LOG.debug(_('could not fetch directly, falling back to download'))
+
     path_tmp = "%s.part" % path
     fetch(context, image_href, path_tmp, user_id, project_id,
           max_size=max_size)

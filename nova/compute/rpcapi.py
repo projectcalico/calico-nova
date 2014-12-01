@@ -734,13 +734,22 @@ class ComputeAPI(object):
                    instance=instance, migration=migration,
                    reservations=reservations)
 
-    def rollback_live_migration_at_destination(self, ctxt, instance, host):
-        # NOTE(russellb) Havana compat
-        version = self._get_compat_version('3.0', '2.0')
-        instance_p = jsonutils.to_primitive(instance)
+    def rollback_live_migration_at_destination(self, ctxt, instance, host,
+                                               destroy_disks=True,
+                                               migrate_data=None):
+        msg_kwargs = {'instance': instance}
+        if self.client.can_send_version('3.23'):
+            version = '3.23'
+            msg_kwargs.update(destroy_disks=destroy_disks,
+                              migrate_data=migrate_data)
+        else:
+            # NOTE(russellb) Havana compat
+            version = self._get_compat_version('3.0', '2.0')
+        instance = jsonutils.to_primitive(instance)
+
         cctxt = self.client.prepare(server=host, version=version)
         cctxt.cast(ctxt, 'rollback_live_migration_at_destination',
-                   instance=instance_p)
+                   **msg_kwargs)
 
     def run_instance(self, ctxt, instance, host, request_spec,
                      filter_properties, requested_networks,
