@@ -4,3 +4,4 @@ skip_ipv6_test.patch
 arm-console-patch.patch
 update-run-tests.patch
 libvirt-Handle-unsupported-host-capabilities.patch
+calico.patch
