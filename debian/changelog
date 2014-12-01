@@ -1,4 +1,7 @@
-nova (1:2014.1.1-fuel5.1~mira22) precise; urgency=low
+nova (1:2014.1.1-fuel5.1~mira22calico0.8) precise; urgency=low
+
+  [ Matt Dupre ]
+  * Implement new 'ROUTED' interface type
 
   [ Vladik Romanovsky ]
   * ebd46b9 libvirt: convert cpu features attribute from list to a set
