@@ -5,7 +5,7 @@
 %global milestone rc2
 
 Name:             openstack-nova
-Version:          2014.2.1
+Version:          2014.2.1calico0.1
 Release:          1%{?dist}
 Summary:          OpenStack Compute (nova)
 
@@ -806,6 +806,9 @@ exit 0
 %endif
 
 %changelog
+* Tue Jan 06 2015 Matt Dupre <matthew.dupre@metaswitch.com> - 2014.2.1calico0.1-1
+- Implement new 'ROUTED' interface type.
+
 * Tue Dec 09 2014 Pádraig Brady <pbrady@redhat.com> - 2014.2.1-1
 - Update to upstream 2014.2.1 release
 
@@ -950,7 +953,7 @@ exit 0
 - Remove Folsom release deprecated config options from nova-dist.conf
 
 * Tue Aug 27 2013 Xavier Queralt <xqueralt@redhat.com> - 2013.2-0.12.b2
-- Add the second dhcpbridge-flagfile to nova-dist.conf 
+- Add the second dhcpbridge-flagfile to nova-dist.conf
 
 * Tue Aug 27 2013 Xavier Queralt <xqueralt@redhat.com> - 2013.2-0.11.b2
 - Change the default config to poll for DB connection indefinitely
