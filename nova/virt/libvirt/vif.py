@@ -320,8 +320,8 @@ class LibvirtGenericVIFDriver(object):
 
         return conf
 
-    def get_config_routed(self, instance, vif, image_meta,
-                           inst_type, virt_type):
+    def get_config_tap(self, instance, vif, image_meta,
+                       inst_type, virt_type):
         conf = self.get_base_config(instance, vif, image_meta,
                                     inst_type, virt_type)
 
@@ -536,8 +536,8 @@ class LibvirtGenericVIFDriver(object):
         except processutils.ProcessExecutionError:
             LOG.exception(_LE("Failed while plugging vif"), instance=instance)
 
-    def plug_routed(self, instance, vif):
-        """Plug a routed virtual interface
+    def plug_tap(self, instance, vif):
+        """Plug a VIF_TYPE_TAP virtual interface
         """
         dev = self.get_vif_devname(vif)
         linux_net.create_tap_dev(dev)
@@ -675,8 +675,8 @@ class LibvirtGenericVIFDriver(object):
             LOG.exception(_LE("Failed while unplugging vif"),
                           instance=instance)
 
-    def unplug_routed(self, instance, vif):
-        """Unplug a routed virtual interface.
+    def unplug_tap(self, instance, vif):
+        """Unplug a VIF_TYPE_TAP virtual interface.
         """
         dev = self.get_vif_devname(vif)
         try:
