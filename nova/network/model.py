@@ -42,7 +42,7 @@ VIF_TYPE_MIDONET = 'midonet'
 VIF_TYPE_VHOSTUSER = 'vhostuser'
 VIF_TYPE_VROUTER = 'vrouter'
 VIF_TYPE_OTHER = 'other'
-VIF_TYPE_ROUTED = 'routed'
+VIF_TYPE_TAP = 'tap'
 
 # Constants for dictionary keys in the 'vif_details' field in the VIF
 # class
