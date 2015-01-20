@@ -29,10 +29,8 @@ distribution:
 - calico\_2014.1.1 and ubuntu\_precise\_mira\_2014.1.1, for installing
   Calico using Mirantis Fuel 5.1.
 
-- rhel7, for installation on Red Hat Enterprise Linux 7 (based on
-  OpenStack 2014.2.1).  (This branch is an exception to the general
-  scheme above, as it has the code changes and packaging combined in
-  the same branch.)
+- calico\_2014.2.1 and rhel7\_2014.2.1, for installation on Red Hat
+  Enterprise Linux 7.
 
 Please do contact us via http://www.projectcalico.org/community/, for
 help with rebasing or applying Calico patches to other upstream
