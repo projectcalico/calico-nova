@@ -1,25 +1,25 @@
 This repository is Project Calico's fork of the OpenStack Nova project.
 
 Branches containing Calico-related work are generally named
-calico\__TAG_ or _DISTRIBUTION_\__TAG_, where
+calico\_`TAG` or `DISTRIBUTION`\_`TAG`, where
 
-- _TAG_ is the OpenStack version number, such as 2014.2.1
+- `TAG` is the OpenStack version number, such as 2014.2.1
 
-- _DISTRIBUTION_ names the distribution that the branch's code aims to
+- `DISTRIBUTION` names the distribution that the branch's code aims to
   be installed on, such as "ubuntu" or "rhel7".
 
-calico\__TAG_ branches contain Calico-specific changes to the upstream
-OpenStack code.  _DISTRIBUTION_\__TAG_ branches incorporate those code
+calico\_`TAG` branches contain Calico-specific changes to the upstream
+OpenStack code.  `DISTRIBUTION`\_`TAG` branches incorporate those code
 changes and also contain packaging and metadata as appropriate for the
 target distribution.  In some cases (such as Ubuntu) the packaging
 branches represent the code changes in a quite different form from the
-Git commits that you can see in the related calico\__TAG_ branch;
+Git commits that you can see in the related calico\_`TAG` branch;
 e.g. as patch files under `debian/patches`.  Therefore, if you're
 interested in Calico's changes to OpenStack code, best to look at the
-calico\__TAG_ branch; if you're interested in the packaging for a
-particular distribution, look at _DISTRIBUTION_\__TAG_.
+calico\_`TAG` branch; if you're interested in the packaging for a
+particular distribution, look at `DISTRIBUTION`\_`TAG`.
 
-The following branches are currently our *active* ones - i.e. the ones
+The following branches are currently our **active** ones - i.e. the ones
 that we actively maintain for installing Calico on the relevant target
 distribution:
 
