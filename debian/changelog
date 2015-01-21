@@ -1,3 +1,9 @@
+nova (1:2014.1.1-fuel5.1~mira22calico0.9) precise; urgency=medium
+
+  * Change from VIF_TYPE_ROUTED to VIF_TYPE_TAP
+
+ -- Neil Jerram <Neil.Jerram@metaswitch.com>  Wed, 21 Jan 2015 14:39:31 +0000
+
 nova (1:2014.1.1-fuel5.1~mira22calico0.8) precise; urgency=low
 
   [ Matt Dupre ]
