@@ -605,7 +605,7 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
         super(LibvirtGenericVIFDriver,
               self).plug(instance, vif)
         dev = self.get_vif_devname(vif)
-        linux_net.create_tap_dev(dev)
+        linux_net.create_tap_dev(dev, mac_address='00:61:fe:ed:ca:fe')
 
     def plug(self, instance, vif):
         vif_type = vif['type']
