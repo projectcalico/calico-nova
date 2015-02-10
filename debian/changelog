@@ -1,3 +1,10 @@
+nova (1:2014.2.1-0ubuntu1calico0.12) trusty; urgency=medium
+
+  * Add new 'TAP' VIF type
+  * Use statically allocated MAC address
+
+ -- Matt Dupre <matthew.dupre@metaswitch.com>  Tue, 10 Feb 2015 17:05:11 +0000
+
 nova (1:2014.2.1-0ubuntu1~cloud0) trusty-juno; urgency=medium
 
   * New upstream release for the Ubuntu Cloud Archive.
