@@ -12,7 +12,6 @@
 
 """Tests for expectations of behaviour from the Xen driver."""
 
-import mock
 from oslo.config import cfg
 
 from nova.compute import power_state
@@ -43,9 +42,7 @@ class ComputeXenTestCase(stubs.XenAPITestBaseNoDB):
         # execute power syncing synchronously for testing:
         self.compute._sync_power_pool = eventlet_utils.SyncPool()
 
-    @mock.patch('eventlet.spawn_n')
-    def test_sync_power_states_instance_not_found(self, _spawn_n):
-        _spawn_n.side_effect = eventlet_utils.sync_spawn_n
+    def test_sync_power_states_instance_not_found(self):
         db_instance = fake_instance.fake_db_instance()
         ctxt = context.get_admin_context()
         instance_list = instance_obj._make_instance_list(ctxt,

@@ -16,19 +16,13 @@
 
 
 import mock
-import testtools
 
-try:
-    from nova.console import websocketproxy
-except ImportError:
-    websocketproxy = None
-
+from nova.console import websocketproxy
 from nova import test
 
 
 class NovaProxyRequestHandlerBaseTestCase(test.TestCase):
 
-    @testtools.skipIf(websocketproxy is None, "websockify not available")
     def setUp(self):
         super(NovaProxyRequestHandlerBaseTestCase, self).setUp()
 
