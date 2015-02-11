@@ -1,4 +1,4 @@
-nova (1:2014.2.1-0ubuntu1calico0.12) trusty; urgency=medium
+nova (1:2014.2.1-0ubuntu1calico0.12.1~rc1) trusty; urgency=medium
 
   * Add new 'TAP' VIF type
   * Use statically allocated MAC address
