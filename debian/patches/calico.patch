@@ -1,5 +1,7 @@
---- a/nova/network/model.py
-+++ b/nova/network/model.py
+Index: calico-nova/nova/network/model.py
+===================================================================
+--- calico-nova.orig/nova/network/model.py	2015-02-13 16:56:08.741479860 +0000
++++ calico-nova/nova/network/model.py	2015-02-13 16:56:08.741479860 +0000
 @@ -38,6 +38,7 @@
  VIF_TYPE_MLNX_DIRECT = 'mlnx_direct'
  VIF_TYPE_MIDONET = 'midonet'
@@ -8,8 +10,10 @@
  
  # Constants for dictionary keys in the 'vif_details' field in the VIF
  # class
---- a/nova/virt/libvirt/vif.py
-+++ b/nova/virt/libvirt/vif.py
+Index: calico-nova/nova/virt/libvirt/vif.py
+===================================================================
+--- calico-nova.orig/nova/virt/libvirt/vif.py	2015-02-13 16:56:08.741479860 +0000
++++ calico-nova/nova/virt/libvirt/vif.py	2015-02-13 16:59:04.701529203 +0000
 @@ -314,6 +314,17 @@
  
          return conf
@@ -50,7 +54,7 @@
 +        super(LibvirtGenericVIFDriver,
 +              self).plug(instance, vif)
 +        dev = self.get_vif_devname(vif)
-+        linux_net.create_tap_dev(dev)
++        linux_net.create_tap_dev(dev, mac_address='00:61:fe:ed:ca:fe')
 +
      def plug(self, instance, vif):
          vif_type = vif['type']
