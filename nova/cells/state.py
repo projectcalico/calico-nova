@@ -152,7 +152,10 @@ class CellStateManager(base.Base):
             cells_config = CONF.cells.cells_config
 
         if cells_config:
-            return CellStateManagerFile(cell_state_cls)
+            config_path = CONF.find_file(cells_config)
+            if not config_path:
+                raise cfg.ConfigFilesNotFoundError(config_files=[cells_config])
+            return CellStateManagerFile(cell_state_cls, config_path)
 
         return CellStateManagerDB(cell_state_cls)
 
@@ -447,11 +450,8 @@ class CellStateManagerDB(CellStateManager):
 
 
 class CellStateManagerFile(CellStateManager):
-    def __init__(self, cell_state_cls=None):
-        cells_config = CONF.cells.cells_config
-        self.cells_config_path = CONF.find_file(cells_config)
-        if not self.cells_config_path:
-            raise cfg.ConfigFilesNotFoundError(config_files=[cells_config])
+    def __init__(self, cell_state_cls, cells_config_path):
+        self.cells_config_path = cells_config_path
         super(CellStateManagerFile, self).__init__(cell_state_cls)
 
     def _cell_data_sync(self, force=False):
