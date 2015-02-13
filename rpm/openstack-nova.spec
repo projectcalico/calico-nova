@@ -5,7 +5,7 @@
 %global milestone rc2
 
 Name:             openstack-nova
-Version:          2014.2.1calico0.11
+Version:          2014.2.1calico0.12.1
 Release:          1%{?dist}
 Summary:          OpenStack Compute (nova)
 
@@ -806,6 +806,9 @@ exit 0
 %endif
 
 %changelog
+* Fri Feb 13 2015 Matt Dupre <matthew.dupre@metaswitch.com> - 2014.2.1calico0.12.1-1
+- Use statically allocated MAC address for all ifs
+
 * Fri Jan 30 2015 Matt Dupre <matthew.dupre@metaswitch.com> - 2014.2.1calico0.11-1
 - Change from VIF_TYPE_ROUTED to VIF_TYPE_TAP
 
