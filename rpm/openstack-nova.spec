@@ -2,8 +2,8 @@
 %global with_trans %{!?_without_trans:1}%{?_without_trans:0}
 
 Name:             openstack-nova
-Version:          2014.1.3
-Release:          3%{?dist}
+Version:          2014.1.3calico0.13
+Release:          1%{?dist}
 Summary:          OpenStack Compute (nova)
 
 Group:            Applications/System
@@ -1135,6 +1135,9 @@ fi
 %endif
 
 %changelog
+* Fri Feb 20 2015 Neil Jerram <Neil.Jerram@metaswitch.com> - 2014.1.3calico0.13-1
+- Release Project Calico's modified Nova for RHEL 6.5
+
 * Tue Oct 21 2014 Pádraig Brady <pbrady@redhat.com> - 2014.1.3-3
 - fixup libvirt dependencies
 
