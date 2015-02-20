@@ -1,0 +1,8 @@
+description "OpenStack Nova Spice HTML5 proxy Server"
+
+start on stopped rc RUNLEVEL=[2345]
+stop on runlevel [S016]
+
+respawn
+
+exec su -s /bin/sh -c "exec /usr/bin/nova-spicehtml5proxy --logfile /var/log/nova/spicehtml5proxy.log" nova
