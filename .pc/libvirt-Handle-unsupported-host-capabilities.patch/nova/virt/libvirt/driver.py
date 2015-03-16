@@ -76,7 +76,6 @@ from nova.objects import service as service_obj
 from nova.openstack.common import excutils
 from nova.openstack.common import fileutils
 from nova.openstack.common.gettextutils import _
-from nova.openstack.common.gettextutils import _LW
 from nova.openstack.common import importutils
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
@@ -2863,14 +2862,9 @@ class LibvirtDriver(driver.ComputeDriver):
                     #                 this -1 checking should be removed later.
                     if features and features != -1:
                         self._caps.host.cpu.parse_str(features)
-                except libvirt.libvirtError as ex:
-                    error_code = ex.get_error_code()
-                    if error_code == libvirt.VIR_ERR_NO_SUPPORT:
-                        LOG.warn(_LW("URI %(uri)s does not support full set"
-                                     " of host capabilities: " "%(error)s"),
-                                     {'uri': self.uri(), 'error': ex})
-                    else:
-                        raise
+                except libvirt.VIR_ERR_NO_SUPPORT:
+                    # Note(yjiang5): ignore if libvirt has no support
+                    pass
         return self._caps
 
     def get_host_uuid(self):
