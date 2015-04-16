@@ -20,6 +20,7 @@ import netaddr
 
 from nova import exception
 from nova.objects import fixed_ip
+from nova.objects import network
 from nova.openstack.common import timeutils
 from nova.tests import fake_instance
 from nova.tests.objects import test_network
@@ -320,6 +321,17 @@ class _TestFixedIPObject(object):
         self.assertIn('default_route', primitive['nova_object.data'])
         fixed_ips[0].obj_make_compatible(primitive['nova_object.data'], '1.1')
         self.assertNotIn('default_route', primitive['nova_object.data'])
+
+    def test_backport_fixed_ip_with_network(self):
+        fixed_ip_obj = fixed_ip.FixedIP(context=self.context, **fake_fixed_ip)
+        network_obj = network.Network()
+        fixed_ip_obj.network = network_obj
+        fixed_ip_primitive = fixed_ip_obj.obj_to_primitive()
+
+        fixed_ip_obj.obj_make_compatible(
+            fixed_ip_primitive['nova_object.data'], '1.1')
+        self.assertEqual('1.1', fixed_ip_primitive['nova_object.data'][
+            'network']['nova_object.version'])
 
 
 class TestFixedIPObject(test_objects._LocalTest,

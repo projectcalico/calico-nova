@@ -5298,7 +5298,8 @@ class LibvirtConnTestCase(test.TestCase):
     def _mock_can_live_migrate_source(self, block_migration=False,
                                       is_shared_block_storage=False,
                                       is_shared_instance_path=False,
-                                      disk_available_mb=1024):
+                                      disk_available_mb=1024,
+                                      block_device_info=None):
         instance = db.instance_create(self.context, self.test_instance)
         dest_check_data = {'filename': 'file',
                            'image_type': 'default',
@@ -5308,8 +5309,8 @@ class LibvirtConnTestCase(test.TestCase):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
 
         self.mox.StubOutWithMock(conn, '_is_shared_block_storage')
-        conn._is_shared_block_storage(instance, dest_check_data).AndReturn(
-                is_shared_block_storage)
+        conn._is_shared_block_storage(instance, dest_check_data,
+                block_device_info).AndReturn(is_shared_block_storage)
         self.mox.StubOutWithMock(conn, '_check_shared_storage_test_file')
         conn._check_shared_storage_test_file('file').AndReturn(
                 is_shared_instance_path)
@@ -5323,7 +5324,7 @@ class LibvirtConnTestCase(test.TestCase):
         self.mox.StubOutWithMock(conn, "_assert_dest_node_has_enough_disk")
         conn._assert_dest_node_has_enough_disk(
             self.context, instance, dest_check_data['disk_available_mb'],
-            False)
+            False, None)
 
         self.mox.ReplayAll()
         ret = conn.check_can_live_migrate_source(self.context, instance,
@@ -5361,7 +5362,7 @@ class LibvirtConnTestCase(test.TestCase):
         self.mox.ReplayAll()
         self.assertRaises(exception.InvalidLocalStorage,
                           conn.check_can_live_migrate_source,
-                          self.context, instance, dest_check_data)
+                          self.context, instance, dest_check_data, None)
 
     def test_check_can_live_migrate_shared_path_block_migration_fails(self):
         instance, dest_check_data, conn = self._mock_can_live_migrate_source(
@@ -5386,8 +5387,9 @@ class LibvirtConnTestCase(test.TestCase):
                 disk_available_mb=0)
 
         self.mox.StubOutWithMock(conn, "get_instance_disk_info")
-        conn.get_instance_disk_info(instance["name"]).AndReturn(
-                                            '[{"virt_disk_size":2}]')
+        conn.get_instance_disk_info(instance["name"],
+                                    block_device_info=None).AndReturn(
+                                        '[{"virt_disk_size":2}]')
 
         self.mox.ReplayAll()
         self.assertRaises(exception.MigrationError,
@@ -5432,7 +5434,7 @@ class LibvirtConnTestCase(test.TestCase):
             self.assertFalse(conn._is_shared_block_storage(
                 {'name': 'instance_name'},
                 {'is_volume_backed': True, 'is_shared_instance_path': False}))
-            mock_get.assert_called_once_with('instance_name')
+            mock_get.assert_called_once_with('instance_name', None)
 
     def test_is_shared_block_storage_nfs(self):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
@@ -5889,6 +5891,36 @@ class LibvirtConnTestCase(test.TestCase):
                           conn.pre_live_migration, c, inst_ref, vol, None,
                           None, {'is_shared_instance_path': False,
                                  'is_shared_block_storage': False})
+
+    @mock.patch('nova.virt.driver.block_device_info_get_mapping',
+                return_value=())
+    @mock.patch('nova.virt.configdrive.required_by',
+                return_value=True)
+    def test_pre_live_migration_block_with_config_drive_mocked_with_vfat(
+            self, mock_required_by, block_device_info_get_mapping):
+        self.flags(config_drive_format='vfat')
+        # Creating testdata
+        vol = {'block_device_mapping': [
+            {'connection_info': 'dummy', 'mount_device': '/dev/sda'},
+            {'connection_info': 'dummy', 'mount_device': '/dev/sdb'}]}
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+
+        self.test_instance['name'] = 'fake'
+        self.test_instance['kernel_id'] = None
+
+        res_data = drvr.pre_live_migration(
+            self.context, self.test_instance, vol, [], None,
+            {'is_shared_instance_path': False,
+             'is_shared_block_storage': False})
+        block_device_info_get_mapping.assert_called_once_with(
+            {'block_device_mapping': [
+                {'connection_info': 'dummy', 'mount_device': '/dev/sda'},
+                {'connection_info': 'dummy', 'mount_device': '/dev/sdb'}
+            ]}
+        )
+        self.assertEqual({'graphics_listen_addrs': {'spice': '127.0.0.1',
+                                                    'vnc': '127.0.0.1'}},
+                         res_data)
 
     def test_pre_live_migration_vol_backed_works_correctly_mocked(self):
         # Creating testdata, using temp dir.
@@ -7268,6 +7300,7 @@ class LibvirtConnTestCase(test.TestCase):
         conn._hard_reboot(self.context, instance, network_info,
                           block_device_info)
 
+    @mock.patch('nova.openstack.common.fileutils.ensure_tree')
     @mock.patch('nova.openstack.common.loopingcall.FixedIntervalLoopingCall')
     @mock.patch('nova.pci.pci_manager.get_instance_pci_devs')
     @mock.patch('nova.virt.libvirt.LibvirtDriver._prepare_pci_devices_for_use')
@@ -7284,7 +7317,7 @@ class LibvirtConnTestCase(test.TestCase):
             mock_get_instance_path, mock_write_to_file,
             mock_get_instance_disk_info, mock_create_images_and_backing,
             mock_create_domand_and_network, mock_prepare_pci_devices_for_use,
-            mock_get_instance_pci_devs, mock_looping_call):
+            mock_get_instance_pci_devs, mock_looping_call, mock_ensure_tree):
         """For a hard reboot, we shouldn't need an additional call to glance
         to get the image metadata.
 
@@ -7311,6 +7344,7 @@ class LibvirtConnTestCase(test.TestCase):
                           block_device_info)
 
         self.assertFalse(conn._image_api.get.called)
+        mock_ensure_tree.assert_called_once_with('/foo')
 
     def test_power_on(self):
 

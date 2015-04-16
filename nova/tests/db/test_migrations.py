@@ -38,7 +38,6 @@ import os
 
 from migrate.versioning import repository
 import mock
-from oslo.config import cfg
 from oslo.db.sqlalchemy import test_base
 from oslo.db.sqlalchemy import test_migrations
 from oslo.db.sqlalchemy import utils as oslodbutils
@@ -51,7 +50,6 @@ from nova.db.sqlalchemy import migration as sa_migration
 from nova.db.sqlalchemy import utils as db_utils
 from nova.i18n import _
 from nova import test
-from nova.tests import conf_fixture
 from nova.virt.baremetal.db import migration as bm_migration
 from nova.virt.baremetal.db.sqlalchemy import migrate_repo as bm_migrate_repo
 from nova.virt.baremetal.db.sqlalchemy import migration as bm_sa_migration
@@ -81,8 +79,6 @@ class NovaMigrationsCheckersBase(test_migrations.WalkVersionsMixin):
 
     def setUp(self):
         super(NovaMigrationsCheckersBase, self).setUp()
-        conf_fixture.ConfFixture(cfg.CONF)
-        self.addCleanup(cfg.CONF.reset)
         # NOTE(viktors): We should reduce log output because it causes issues,
         #                when we run tests with testr
         migrate_log = logging.getLogger('migrate')
@@ -132,7 +128,9 @@ class NovaMigrationsCheckersBase(test_migrations.WalkVersionsMixin):
 class NovaMigrationsCheckers(NovaMigrationsCheckersBase):
     """Test sqlalchemy-migrate migrations."""
 
-    TIMEOUT_SCALING_FACTOR = 2
+    # NOTE(rpodolyaka): mos-infra-ci nodes seems to be slower than upstream
+    # ones, so we need to increase per test timeout here to ensure tests pass
+    TIMEOUT_SCALING_FACTOR = 3
 
     snake_walk = True
     downgrade = True
@@ -437,11 +435,13 @@ class NovaMigrationsCheckers(NovaMigrationsCheckersBase):
 
 
 class TestNovaMigrationsSQLite(NovaMigrationsCheckers,
+                               test.TestCase,
                                test_base.DbTestCase):
     pass
 
 
 class TestNovaMigrationsMySQL(NovaMigrationsCheckers,
+                              test.TestCase,
                               test_base.MySQLOpportunisticTestCase):
     def test_innodb_tables(self):
         with mock.patch.object(sa_migration, 'get_engine',
@@ -467,13 +467,17 @@ class TestNovaMigrationsMySQL(NovaMigrationsCheckers,
 
 
 class TestNovaMigrationsPostgreSQL(NovaMigrationsCheckers,
+                                   test.TestCase,
                                    test_base.PostgreSQLOpportunisticTestCase):
     pass
 
 
 class BaremetalMigrationsCheckers(NovaMigrationsCheckersBase):
     """Test sqlalchemy-migrate migrations."""
-    TIMEOUT_SCALING_FACTOR = 2
+
+    # NOTE(rpodolyaka): mos-infra-ci nodes seems to be slower than upstream
+    # ones, so we need to increase per test timeout here to ensure tests pass
+    TIMEOUT_SCALING_FACTOR = 3
 
     snake_walk = True
     downgrade = True
@@ -601,17 +605,20 @@ class BaremetalMigrationsCheckers(NovaMigrationsCheckersBase):
 
 
 class TestBaremetalMigrationsSQLite(BaremetalMigrationsCheckers,
-                               test_base.DbTestCase):
+                                    test.TestCase,
+                                    test_base.DbTestCase):
     pass
 
 
 class TestBaremetalMigrationsMySQL(BaremetalMigrationsCheckers,
+                                   test.TestCase,
                                    test_base.MySQLOpportunisticTestCase):
     pass
 
 
 class TestBaremetalMigrationsPostgreSQL(
         NovaMigrationsCheckers,
+        test.TestCase,
         test_base.PostgreSQLOpportunisticTestCase):
     pass
 

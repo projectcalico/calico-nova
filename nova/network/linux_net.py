@@ -27,7 +27,7 @@ from oslo.config import cfg
 import six
 
 from nova import exception
-from nova.i18n import _
+from nova.i18n import _, _LE
 from nova import objects
 from nova.openstack.common import excutils
 from nova.openstack.common import fileutils
@@ -992,11 +992,12 @@ def get_dhcp_opts(context, network_ref, fixedips):
 
 
 def release_dhcp(dev, address, mac_address):
-    try:
-        utils.execute('dhcp_release', dev, address, mac_address,
-                      run_as_root=True)
-    except processutils.ProcessExecutionError:
-        raise exception.NetworkDhcpReleaseFailed(address=address,
+    if device_exists(dev):
+        try:
+            utils.execute('dhcp_release', dev, address, mac_address,
+                          run_as_root=True)
+        except processutils.ProcessExecutionError:
+            raise exception.NetworkDhcpReleaseFailed(address=address,
                                                  mac_address=mac_address)
 
 
@@ -1383,6 +1384,17 @@ def delete_net_dev(dev):
                 LOG.error(_("Failed removing net device: '%s'"), dev)
 
 
+def delete_bridge_dev(dev):
+    """Delete a network bridge."""
+    if device_exists(dev):
+        try:
+            utils.execute('ip', 'link', 'set', dev, 'down', run_as_root=True)
+            utils.execute('brctl', 'delbr', dev, run_as_root=True)
+        except processutils.ProcessExecutionError:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_LE("Failed removing bridge device: '%s'"), dev)
+
+
 # Similar to compute virt layers, the Linux network node
 # code uses a flexible driver model to support different ways
 # of creating ethernet interfaces and attaching them to the network.
@@ -1636,7 +1648,7 @@ class LinuxBridgeInterfaceDriver(LinuxNetInterfaceDriver):
                         ipv4_filter.remove_rule('FORWARD',
                                                 ('--out-interface %s -j %s'
                                                  % (bridge, drop_action)))
-            delete_net_dev(bridge)
+            delete_bridge_dev(bridge)
 
 
 @utils.synchronized('ebtables', external=True)

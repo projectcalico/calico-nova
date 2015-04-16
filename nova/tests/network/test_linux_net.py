@@ -1111,3 +1111,24 @@ class LinuxNetworkTestCase(test.NoDBTestCase):
                       check_exit_code=[0, 2, 254])
         ]
         self._create_veth_pair(calls)
+
+    @mock.patch('os.path.exists', return_value=True)
+    @mock.patch('nova.utils.execute')
+    def test_remove_bridge(self, mock_execute, mock_exists):
+        linux_net.LinuxBridgeInterfaceDriver.remove_bridge('fake-bridge')
+        expected_exists_args = mock.call('/sys/class/net/fake-bridge')
+        expected_execute_args = [
+            mock.call('ip', 'link', 'set', 'fake-bridge', 'down',
+                      run_as_root=True),
+            mock.call('brctl', 'delbr', 'fake-bridge', run_as_root=True)]
+
+        self.assertIn(expected_exists_args, mock_exists.mock_calls)
+        self.assertEqual(expected_execute_args, mock_execute.mock_calls)
+
+    @mock.patch('os.path.exists', return_value=True)
+    @mock.patch('nova.utils.execute',
+                side_effect=processutils.ProcessExecutionError())
+    def test_remove_bridge_negative(self, mock_execute, mock_exists):
+        self.assertRaises(processutils.ProcessExecutionError,
+                          linux_net.LinuxBridgeInterfaceDriver.remove_bridge,
+                          'fake-bridge')

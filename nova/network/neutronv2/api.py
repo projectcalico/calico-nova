@@ -197,7 +197,8 @@ class API(base_api.NetworkAPI):
         """
         try:
             if fixed_ip:
-                port_req_body['port']['fixed_ips'] = [{'ip_address': fixed_ip}]
+                port_req_body['port']['fixed_ips'] = [
+                    {'ip_address': str(fixed_ip)}]
             port_req_body['port']['network_id'] = network_id
             port_req_body['port']['admin_state_up'] = True
             port_req_body['port']['tenant_id'] = instance['project_id']
@@ -242,7 +243,7 @@ class API(base_api.NetworkAPI):
                 # Perform this check here rather than in validate_networks to
                 # ensure the check is performed every time
                 # allocate_for_instance is invoked
-                if net.get('router:external'):
+                if net.get('router:external') and not net.get('shared'):
                     raise exception.ExternalNetworkAttachForbidden(
                         network_uuid=net['id'])
 

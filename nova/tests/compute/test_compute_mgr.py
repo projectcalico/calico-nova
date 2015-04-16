@@ -361,6 +361,30 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
         self.mox.VerifyAll()
         self.mox.UnsetStubs()
 
+    def test_init_instance_with_binding_failed_vif_type(self):
+        # this instance will plug a 'binding_failed' vif
+        instance = fake_instance.fake_instance_obj(
+                self.context,
+                uuid='fake-uuid',
+                info_cache=None,
+                power_state=power_state.RUNNING,
+                vm_state=vm_states.ACTIVE,
+                task_state=None,
+                expected_attrs=['info_cache'])
+
+        with contextlib.nested(
+            mock.patch.object(context, 'get_admin_context',
+                return_value=self.context),
+            mock.patch.object(compute_utils, 'get_nw_info_for_instance',
+                return_value=network_model.NetworkInfo()),
+            mock.patch.object(self.compute.driver, 'plug_vifs',
+                side_effect=exception.VirtualInterfacePlugException(
+                    "Unexpected vif_type=binding_failed")),
+            mock.patch.object(self.compute, '_set_instance_error_state')
+        ) as (get_admin_context, get_nw_info, plug_vifs, set_error_state):
+            self.compute._init_instance(self.context, instance)
+            set_error_state.assert_called_once_with(self.context, instance)
+
     def test_init_instance_failed_resume_sets_error(self):
         instance = fake_instance.fake_instance_obj(
                 self.context,
@@ -1229,13 +1253,19 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
 
         self.mox.StubOutWithMock(self.compute.compute_api,
                                  'is_volume_backed_instance')
+        self.mox.StubOutWithMock(self.compute,
+                                 '_get_instance_block_device_info')
         self.mox.StubOutWithMock(self.compute.driver,
                                  'check_can_live_migrate_source')
 
         self.compute.compute_api.is_volume_backed_instance(
                 self.context, instance).AndReturn(is_volume_backed)
+        self.compute._get_instance_block_device_info(
+                self.context, instance, refresh_conn_info=True
+                ).AndReturn({'block_device_mapping': 'fake'})
         self.compute.driver.check_can_live_migrate_source(
-                self.context, instance, expected_dest_check_data)
+                self.context, instance, expected_dest_check_data,
+                {'block_device_mapping': 'fake'})
 
         self.mox.ReplayAll()
 
@@ -2052,7 +2082,7 @@ class ComputeManagerBuildInstanceTestCase(test.NoDBTestCase):
                                                        'fake-node']]}}
 
         def fake_network_info():
-            return network_model.NetworkInfo()
+            return network_model.NetworkInfo([{'address': '1.2.3.4'}])
 
         self.network_info = network_model.NetworkInfoAsyncWrapper(
                 fake_network_info)
@@ -2528,7 +2558,7 @@ class ComputeManagerBuildInstanceTestCase(test.NoDBTestCase):
                     side_effect=[self.instance, self.instance]),
                 mock.patch.object(self.compute,
                     '_build_networks_for_instance',
-                    return_value=self.network_info),
+                    return_value=network_model.NetworkInfo()),
                 mock.patch.object(self.compute,
                     '_notify_about_instance_usage'),
                 mock.patch.object(self.compute,
@@ -2573,7 +2603,7 @@ class ComputeManagerBuildInstanceTestCase(test.NoDBTestCase):
 
             _shutdown_instance.assert_called_once_with(self.context,
                     self.instance, self.block_device_mapping,
-                    self.requested_networks, try_deallocate_networks=False)
+                    self.requested_networks, try_deallocate_networks=True)
 
     @mock.patch('nova.compute.manager.ComputeManager._get_power_state')
     def test_spawn_waits_for_network_and_saves_info_cache(self, gps):
@@ -2730,7 +2760,7 @@ class ComputeManagerBuildInstanceTestCase(test.NoDBTestCase):
         self.mox.StubOutWithMock(self.compute, '_shutdown_instance')
         self.compute._build_networks_for_instance(self.context, self.instance,
                 self.requested_networks, self.security_groups).AndReturn(
-                        network_model.NetworkInfo())
+                        network_model.NetworkInfo([{'address': '1.2.3.4'}]))
         self.compute._shutdown_instance(self.context, self.instance,
                 self.block_device_mapping, self.requested_networks,
                 try_deallocate_networks=False)
@@ -3053,3 +3083,67 @@ class ComputeManagerMigrationTestCase(test.NoDBTestCase):
             )
             self.assertEqual("error", self.migration.status)
             migration_save.assert_has_calls([mock.call(elevated_context)])
+
+    @mock.patch.object(objects.InstanceActionEvent,
+                       'event_start')
+    @mock.patch.object(objects.InstanceActionEvent,
+                       'event_finish_with_failure')
+    def _test_revert_resize_instance_destroy_disks(self,
+                                                   event_finish,
+                                                   event_start,
+                                                   is_shared=False,):
+
+        # This test asserts that _is_instance_storage_shared() is called from
+        # revert_resize() and the return value is passed to driver.destroy().
+        # Otherwise we could regress this.
+
+        @mock.patch.object(self.compute, '_get_instance_nw_info')
+        @mock.patch.object(self.compute, '_is_instance_storage_shared')
+        @mock.patch.object(self.compute, 'finish_revert_resize')
+        @mock.patch.object(self.compute, '_instance_update')
+        @mock.patch.object(self.compute, '_get_resource_tracker')
+        @mock.patch.object(self.compute.driver, 'destroy')
+        @mock.patch.object(self.compute.network_api, 'setup_networks_on_host')
+        @mock.patch.object(self.compute.network_api, 'migrate_instance_start')
+        @mock.patch.object(self.compute.conductor_api, 'notify_usage_exists')
+        @mock.patch.object(self.migration, 'save')
+        @mock.patch.object(objects.BlockDeviceMappingList,
+                           'get_by_instance_uuid')
+        def do_test(get_by_instance_uuid,
+                    migration_save,
+                    notify_usage_exists,
+                    migrate_instance_start,
+                    setup_networks_on_host,
+                    destroy,
+                    _get_resource_tracker,
+                    _instance_update,
+                    finish_revert_resize,
+                    _is_instance_storage_shared,
+                    _get_instance_nw_info):
+
+            self.migration.source_compute = self.instance['host']
+
+            # Inform compute that instance uses non-shared or shared storage
+            _is_instance_storage_shared.return_value = is_shared
+
+            self.compute.revert_resize(context=self.context,
+                                       migration=self.migration,
+                                       instance=self.instance,
+                                       reservations=None)
+
+            _is_instance_storage_shared.assert_called_once_with(
+                self.context, self.instance,
+                host=self.migration.source_compute)
+
+            # If instance storage is shared, driver destroy method
+            # should not destroy disks otherwise it should destroy disks.
+            destroy.assert_called_once_with(self.context, self.instance,
+                                            mock.ANY, mock.ANY, not is_shared)
+
+        do_test()
+
+    def test_revert_resize_instance_destroy_disks_shared_storage(self):
+        self._test_revert_resize_instance_destroy_disks(is_shared=True)
+
+    def test_revert_resize_instance_destroy_disks_non_shared_storage(self):
+        self._test_revert_resize_instance_destroy_disks(is_shared=False)

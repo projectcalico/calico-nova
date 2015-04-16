@@ -331,7 +331,9 @@ class TestDriverBlockDevice(test.NoDBTestCase):
                        lambda: elevated_context)
         self.mox.StubOutWithMock(driver_bdm._bdm_obj, 'save')
         self.mox.StubOutWithMock(encryptors, 'get_encryption_metadata')
-        instance = {'id': 'fake_id', 'uuid': 'fake_uuid'}
+        instance_detail = {'id': '123', 'uuid': 'fake_uuid'}
+        instance = fake_instance.fake_instance_obj(self.context,
+                                                   **instance_detail)
         connector = {'ip': 'fake_ip', 'host': 'fake_host'}
         connection_info = {'data': {'access_mode': access_mode}}
         expected_conn_info = {'data': {'access_mode': access_mode},
@@ -515,8 +517,8 @@ class TestDriverBlockDevice(test.NoDBTestCase):
 
         self.volume_api.get_snapshot(self.context,
                                      'fake-snapshot-id-1').AndReturn(snapshot)
-        self.volume_api.create(self.context, 3,
-                               '', '', snapshot).AndReturn(volume)
+        self.volume_api.create(self.context, 3, '', '', snapshot,
+                               availability_zone=None).AndReturn(volume)
         wait_func(self.context, 'fake-volume-id-2').AndReturn(None)
         instance, expected_conn_info = self._test_volume_attach(
                test_bdm, no_volume_snapshot, volume)
@@ -559,8 +561,8 @@ class TestDriverBlockDevice(test.NoDBTestCase):
 
         wait_func = self.mox.CreateMockAnything()
 
-        self.volume_api.create(self.context, 1,
-                               '', '', image_id=image['id']).AndReturn(volume)
+        self.volume_api.create(self.context, 1, '', '', availability_zone=None,
+                               image_id=image['id']).AndReturn(volume)
         wait_func(self.context, 'fake-volume-id-2').AndReturn(None)
         instance, expected_conn_info = self._test_volume_attach(
                test_bdm, no_volume_image, volume)
@@ -609,10 +611,9 @@ class TestDriverBlockDevice(test.NoDBTestCase):
             test_bdm.attach(self.context, instance, self.volume_api,
                             self.virt_driver)
 
-            vol_create.assert_called_once_with(self.context,
-                                               test_bdm.volume_size,
-                                               'fake-uuid-blank-vol',
-                                               '')
+            vol_create.assert_called_once_with(
+                self.context, test_bdm.volume_size, 'fake-uuid-blank-vol',
+                '', availability_zone=instance.availability_zone)
             vol_attach.assert_called_once_with(self.context, instance,
                                                self.volume_api,
                                                self.virt_driver,

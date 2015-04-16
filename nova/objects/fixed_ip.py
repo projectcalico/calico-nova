@@ -61,6 +61,10 @@ class FixedIP(obj_base.NovaPersistentObject, obj_base.NovaObject):
             self.instance.obj_make_compatible(
                     primitive['instance']['nova_object.data'], '1.13')
             primitive['instance']['nova_object.version'] = '1.13'
+        if target_version < (1, 2) and 'network' in primitive:
+            self.network.obj_make_compatible(
+                    primitive['network']['nova_object.data'], '1.1')
+            primitive['network']['nova_object.version'] = '1.1'
 
     @property
     def floating_ips(self):
