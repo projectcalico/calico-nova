@@ -1,0 +1,12 @@
+diff --git a/requirements.txt b/requirements.txt
+index d1b9550..3b26ae8 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -26,7 +26,6 @@ python-glanceclient>=0.9.0
+ python-keystoneclient>=0.9.0
+ six>=1.7.0
+ stevedore>=0.14
+-websockify>=0.5.1,<0.6
+ wsgiref>=0.1.2
+ oslo.config>=1.2.1
+ oslo.rootwrap
