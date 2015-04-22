@@ -1,3 +1,11 @@
+nova (1:2014.1.4-0ubuntu2calico0.12.1) trusty; urgency=medium
+
+  * Implement new 'ROUTED' interface type
+  * Change from VIF_TYPE_ROUTED to VIF_TYPE_TAP
+  * Use statically allocated MAC address for all ifs.
+
+ -- Cory Benfield <cory@projectcalico.org>  Wed, 22 Apr 2015 14:13:30 +0100
+
 nova (1:2014.1.4-0ubuntu2) trusty; urgency=medium
 
   [ Edward Hope-Morley ]
