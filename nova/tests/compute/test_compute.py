@@ -31,6 +31,7 @@ import mock
 import mox
 from oslo.config import cfg
 from oslo import messaging
+from oslo.utils import units
 import six
 from testtools import matchers as testtools_matchers
 
@@ -68,7 +69,6 @@ from nova.openstack.common import importutils
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
 from nova.openstack.common import timeutils
-from nova.openstack.common import units
 from nova.openstack.common import uuidutils
 from nova import policy
 from nova import quota
