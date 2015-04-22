@@ -314,6 +314,17 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
 
         return conf
 
+    def get_config_tap(self, instance, vif, image_meta,
+                       inst_type):
+        conf = super(LibvirtGenericVIFDriver,
+                     self).get_config(instance, vif,
+                                      image_meta, inst_type)
+
+        dev = self.get_vif_devname(vif)
+        designer.set_vif_host_backend_ethernet_config(conf, dev)
+
+        return conf
+
     def get_config_mlnx_direct(self, instance, vif, image_meta,
                                inst_type):
         conf = super(LibvirtGenericVIFDriver,
@@ -379,6 +390,11 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
                                            vif,
                                            image_meta,
                                            inst_type)
+        elif vif_type == network_model.VIF_TYPE_TAP:
+            return self.get_config_tap(instance,
+                                       vif,
+                                       image_meta,
+                                       inst_type)
         else:
             raise exception.NovaException(
                 _("Unexpected vif_type=%s") % vif_type)
@@ -583,6 +599,14 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
         except processutils.ProcessExecutionError:
             LOG.exception(_("Failed while plugging vif"), instance=instance)
 
+    def plug_tap(self, instance, vif):
+        """Plug a VIF_TYPE_TAP virtual interface
+        """
+        super(LibvirtGenericVIFDriver,
+              self).plug(instance, vif)
+        dev = self.get_vif_devname(vif)
+        linux_net.create_tap_dev(dev, mac_address='00:61:fe:ed:ca:fe')
+
     def plug(self, instance, vif):
         vif_type = vif['type']
 
@@ -611,6 +635,8 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
             self.plug_mlnx_direct(instance, vif)
         elif vif_type == network_model.VIF_TYPE_MIDONET:
             self.plug_midonet(instance, vif)
+        elif vif_type == network_model.VIF_TYPE_TAP:
+            self.plug_tap(instance, vif)
         else:
             raise exception.VirtualInterfacePlugException(
                 _("Unexpected vif_type=%s") % vif_type)
@@ -744,6 +770,17 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
         except processutils.ProcessExecutionError:
             LOG.exception(_("Failed while unplugging vif"), instance=instance)
 
+    def unplug_tap(self, instance, vif):
+        """Unplug a VIF_TYPE_TAP virtual interface.
+        """
+        super(LibvirtGenericVIFDriver,
+              self).unplug(instance, vif)
+        dev = self.get_vif_devname(vif)
+        try:
+            linux_net.delete_net_dev(dev)
+        except processutils.ProcessExecutionError:
+            LOG.exception(_("Failed while unplugging vif"), instance=instance)
+
     def unplug_iovisor(self, instance, vif):
         """Unplug using PLUMgrid IO Visor Driver
 
@@ -793,6 +830,8 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
             self.unplug_mlnx_direct(instance, vif)
         elif vif_type == network_model.VIF_TYPE_MIDONET:
             self.unplug_midonet(instance, vif)
+        elif vif_type == network_model.VIF_TYPE_TAP:
+            self.unplug_tap(instance, vif)
         else:
             raise exception.NovaException(
                 _("Unexpected vif_type=%s") % vif_type)
