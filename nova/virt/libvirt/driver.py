@@ -3769,7 +3769,7 @@ class LibvirtDriver(driver.ComputeDriver):
         disk_mapping = disk_info['mapping']
         img_meta_prop = image_meta.get('properties', {}) if image_meta else {}
 
-        CONSOLE = "console=tty0 console=ttyS0 console=ttyAMA0"
+        CONSOLE = "console=tty0 console=ttyS0"
 
         guest = vconfig.LibvirtConfigGuest()
         guest.virt_type = CONF.libvirt.virt_type
