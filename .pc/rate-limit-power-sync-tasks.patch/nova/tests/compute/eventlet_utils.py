@@ -15,11 +15,6 @@
 import eventlet
 
 
-def sync_spawn_n(func, *args, **kwargs):
-    """Synchronous spawn_n for testing threaded code."""
-    func(*args, **kwargs)
-
-
 class SyncPool(eventlet.GreenPool):
     """Synchronous pool for testing threaded code without adding sleep
     waits.
