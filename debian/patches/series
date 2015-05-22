@@ -8,3 +8,4 @@ skip-cinder-tests.patch
 skip-ubuntu-tests.patch
 fixup-blkid.patch
 skip-proxy-test.patch
+calico.patch
