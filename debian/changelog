@@ -1,3 +1,9 @@
+nova (1:2015.1.0-0ubuntu1calico0.12.1) trusty; urgency=medium
+
+  * New upstream release of Kilo on cloud archive.
+  
+ -- Cory Benfield <cory.benfield@metaswitch.com>  Fri, 22 May 2015 14:17:58 +0100
+   
 nova (1:2015.1.0-0ubuntu1~cloud0) trusty-kilo; urgency=medium
 
   * New update for the Ubuntu Cloud Archive.
