@@ -177,24 +177,18 @@ class ClaimTestCase(test.NoDBTestCase):
 
     def test_disk_insufficient(self, mock_get):
         limits = {'disk_gb': 45}
-        try:
-            self.assertRaisesRegex(
-                    exception.ComputeResourcesUnavailable,
-                    "disk",
-                    self._claim, limits=limits, root_gb=10, ephemeral_gb=40)
-        except:
-            self.skipTest('Skipped by Ubuntu')
+        self.assertRaisesRegex(
+                exception.ComputeResourcesUnavailable,
+                "disk",
+                self._claim, limits=limits, root_gb=10, ephemeral_gb=40)
 
     def test_disk_and_memory_insufficient(self, mock_get):
         limits = {'disk_gb': 45, 'memory_mb': 8192}
-        try:
-            self.assertRaisesRegex(
-                    exception.ComputeResourcesUnavailable,
-                    "memory.*disk",
-                    self._claim, limits=limits, root_gb=10, ephemeral_gb=40,
-                    memory_mb=16384)
-        except:
-            self.skipTest('Skipped by Ubuntu')
+        self.assertRaisesRegex(
+                exception.ComputeResourcesUnavailable,
+                "memory.*disk",
+                self._claim, limits=limits, root_gb=10, ephemeral_gb=40,
+                memory_mb=16384)
 
     @pci_fakes.patch_pci_whitelist
     def test_pci_pass(self, mock_get):
