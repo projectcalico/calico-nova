@@ -66,6 +66,10 @@ VIF_DETAILS_VHOSTUSER_SOCKET = 'vhostuser_socket'
 # into ovs bridge. Valid values are True and False
 VIF_DETAILS_VHOSTUSER_OVS_PLUG = 'vhostuser_ovs_plug'
 
+# Constants for dictionary keys in the 'vif_details' field that are
+# valid for VIF_TYPE_TAP.
+VIF_DETAILS_TAP_MAC_ADDRESS = 'mac_address'
+
 # Define supported virtual NIC types. VNIC_TYPE_DIRECT and VNIC_TYPE_MACVTAP
 # are used for SR-IOV ports
 VNIC_TYPE_NORMAL = 'normal'

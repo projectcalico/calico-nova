@@ -545,6 +545,12 @@ class LibvirtGenericVIFDriver(object):
         except processutils.ProcessExecutionError:
             LOG.exception(_LE("Failed while plugging vif"), instance=instance)
 
+    def plug_tap(self, instance, vif):
+        """Plug a VIF_TYPE_TAP virtual interface."""
+        dev = self.get_vif_devname(vif)
+        mac = vif['details'].get(network_model.VIF_DETAILS_TAP_MAC_ADDRESS)
+        linux_net.create_tap_dev(dev, mac)
+
     def plug_vhostuser(self, instance, vif):
         ovs_plug = vif['details'].get(
                                 network_model.VIF_DETAILS_VHOSTUSER_OVS_PLUG,
@@ -597,12 +603,6 @@ class LibvirtGenericVIFDriver(object):
             utils.execute('vrouter-port-control', cmd_args, run_as_root=True)
         except processutils.ProcessExecutionError:
             LOG.exception(_LE("Failed while plugging vif"), instance=instance)
-
-    def plug_tap(self, instance, vif):
-        """Plug a VIF_TYPE_TAP virtual interface
-        """
-        dev = self.get_vif_devname(vif)
-        linux_net.create_tap_dev(dev, mac_address='00:61:fe:ed:ca:fe')
 
     def plug(self, instance, vif):
         vif_type = vif['type']
@@ -738,13 +738,13 @@ class LibvirtGenericVIFDriver(object):
                           instance=instance)
 
     def unplug_tap(self, instance, vif):
-        """Unplug a VIF_TYPE_TAP virtual interface.
-        """
+        """Unplug a VIF_TYPE_TAP virtual interface."""
         dev = self.get_vif_devname(vif)
         try:
             linux_net.delete_net_dev(dev)
         except processutils.ProcessExecutionError:
-            LOG.exception(_("Failed while unplugging vif"), instance=instance)
+            LOG.exception(_LE("Failed while unplugging vif"),
+                          instance=instance)
 
     def unplug_iovisor(self, instance, vif):
         """Unplug using PLUMgrid IO Visor Driver
