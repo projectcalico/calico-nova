@@ -8,6 +8,17 @@
  
  # Constants for dictionary keys in the 'vif_details' field in the VIF
  # class
+@@ -65,6 +66,10 @@
+ # into ovs bridge. Valid values are True and False
+ VIF_DETAILS_VHOSTUSER_OVS_PLUG = 'vhostuser_ovs_plug'
+ 
++# Constants for dictionary keys in the 'vif_details' field that are
++# valid for VIF_TYPE_TAP.
++VIF_DETAILS_TAP_MAC_ADDRESS = 'mac_address'
++
+ # Define supported virtual NIC types. VNIC_TYPE_DIRECT and VNIC_TYPE_MACVTAP
+ # are used for SR-IOV ports
+ VNIC_TYPE_NORMAL = 'normal'
 --- a/nova/virt/libvirt/vif.py
 +++ b/nova/virt/libvirt/vif.py
 @@ -318,6 +318,16 @@
@@ -27,32 +38,86 @@
      def get_config_mlnx_direct(self, instance, vif, image_meta,
                                 inst_type, virt_type):
          conf = self.get_base_config(instance, vif, image_meta,
-@@ -588,6 +598,12 @@
+@@ -535,6 +545,12 @@
          except processutils.ProcessExecutionError:
              LOG.exception(_LE("Failed while plugging vif"), instance=instance)
  
 +    def plug_tap(self, instance, vif):
-+        """Plug a VIF_TYPE_TAP virtual interface
-+        """
++        """Plug a VIF_TYPE_TAP virtual interface."""
 +        dev = self.get_vif_devname(vif)
-+        linux_net.create_tap_dev(dev, mac_address='00:61:fe:ed:ca:fe')
++        mac = vif['details'].get(network_model.VIF_DETAILS_TAP_MAC_ADDRESS)
++        linux_net.create_tap_dev(dev, mac)
 +
-     def plug(self, instance, vif):
-         vif_type = vif['type']
- 
-@@ -721,6 +737,15 @@
+     def plug_vhostuser(self, instance, vif):
+         ovs_plug = vif['details'].get(
+                                 network_model.VIF_DETAILS_VHOSTUSER_OVS_PLUG,
+@@ -719,6 +735,15 @@
+             linux_net.delete_net_dev(dev)
+         except processutils.ProcessExecutionError:
              LOG.exception(_LE("Failed while unplugging vif"),
-                           instance=instance)
- 
++                          instance=instance)
++
 +    def unplug_tap(self, instance, vif):
-+        """Unplug a VIF_TYPE_TAP virtual interface.
-+        """
++        """Unplug a VIF_TYPE_TAP virtual interface."""
 +        dev = self.get_vif_devname(vif)
 +        try:
 +            linux_net.delete_net_dev(dev)
 +        except processutils.ProcessExecutionError:
-+            LOG.exception(_("Failed while unplugging vif"), instance=instance)
-+
-     def unplug_iovisor(self, instance, vif):
-         """Unplug using PLUMgrid IO Visor Driver
++            LOG.exception(_LE("Failed while unplugging vif"),
+                           instance=instance)
  
+     def unplug_iovisor(self, instance, vif):
+--- a/nova/tests/unit/network/test_neutronv2.py
++++ b/nova/tests/unit/network/test_neutronv2.py
+@@ -2438,6 +2438,12 @@
+         self.assertTrue(net['should_create_bridge'])
+         self.assertIsNone(iid)
+ 
++    def test_nw_info_build_network_tap(self):
++        net, iid = self._test_nw_info_build_network(model.VIF_TYPE_TAP)
++        self.assertIsNone(net['bridge'])
++        self.assertNotIn('should_create_bridge', net)
++        self.assertIsNone(iid)
++
+     def test_nw_info_build_network_other(self):
+         net, iid = self._test_nw_info_build_network(None)
+         self.assertIsNone(net['bridge'])
+--- a/nova/tests/unit/virt/libvirt/test_vif.py
++++ b/nova/tests/unit/virt/libvirt/test_vif.py
+@@ -268,6 +268,11 @@
+                                     type=network_model.VIF_TYPE_MIDONET,
+                                     devname='tap-xxx-yyy-zzz')
+ 
++    vif_tap = network_model.VIF(id='vif-xxx-yyy-zzz',
++                                address='ca:fe:de:ad:be:ef',
++                                type=network_model.VIF_TYPE_TAP,
++                                devname='tap-xxx-yyy-zzz')
++
+     vif_iovisor = network_model.VIF(id='vif-xxx-yyy-zzz',
+                                    address='ca:fe:de:ad:be:ef',
+                                    network=network_bridge,
+@@ -1000,6 +1005,24 @@
+         self._assertTypeAndMacEquals(node, "ethernet", "target", "dev",
+                                      self.vif_midonet, br_want)
+ 
++    def test_tap_ethernet_vif_driver(self):
++        d = vif.LibvirtGenericVIFDriver()
++        br_want = self.vif_tap['devname']
++        xml = self._get_instance_xml(d, self.vif_tap)
++        node = self._get_node(xml)
++        self._assertTypeAndMacEquals(node, "ethernet", "target", "dev",
++                                     self.vif_tap, br_want)
++
++    @mock.patch('nova.network.linux_net.device_exists')
++    def test_plug_tap(self, device_exists):
++        device_exists.return_value = True
++        d = vif.LibvirtGenericVIFDriver()
++        d.plug_tap(None, self.vif_tap)
++
++    def test_unplug_tap(self):
++        d = vif.LibvirtGenericVIFDriver()
++        d.unplug_tap(None, self.vif_tap)
++
+     def test_generic_8021qbh_driver(self):
+         d = vif.LibvirtGenericVIFDriver()
+         xml = self._get_instance_xml(d, self.vif_8021qbh)
