@@ -1,4 +1,4 @@
-nova (1:2015.1.0-0ubuntu1calico0.22~rc1) trusty; urgency=medium
+nova (1:2015.1.0-0ubuntu1calico0.22) trusty; urgency=medium
 
   * Make Calico's Kilo change the same as at https://review.openstack.org/#/c/146914/
 
