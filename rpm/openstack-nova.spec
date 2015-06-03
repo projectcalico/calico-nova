@@ -7,7 +7,7 @@
 %{!?upstream_version: %global upstream_version %{version}%{?milestone}}
 
 Name:             openstack-nova
-Version:          2015.1.0
+Version:          2015.1.0calico0.23
 Release:          3%{?milestone}%{?dist}
 Summary:          OpenStack Compute (nova)
 
@@ -802,6 +802,10 @@ exit 0
 %endif
 
 %changelog
+* Wed Jun 03 2015 Matt Dupre <matt@projectcalico.org> 2015.1.0calico0.23-3
+- Implement new 'TAP' interface type.
+- Use statically allocated MAC address for all ifs.
+
 * Mon May 04 2015 Alan Pevec <alan.pevec@redhat.com> 2015.1.0-3
 - update keystone_authtoken section in sample conf
 - openstack-nova-* systemd unit files need NotifyAccess=all rhbz#1189347
