@@ -1,35 +1,41 @@
-nova (1:2014.2.2-fuel6.1~mira13) precise; urgency=low
+nova (1:2014.2.2-1~u14.04+mos29) mos6.1; urgency=low
 
-  [ Sergey Nikitin ]
-  * 0608948 Fixed incorrect dhcp_server value during nova-network
-    creation
+  [ Gary Kotton ]
+  * 83b5ee8 VMware: add VirtualVmxnet3 to the supported network types
 
   [ Roman Podoliaka ]
-  * 1373b29 Merge "Ensure bridge deleted with brctl delbr" into
+  * 6afa9e5 Invalidate nw info cache on `network-changed` event
+  * 12ebcef Fix healing of instance nw info cache for real
+
+  [ Artem Silenkov ]
+  * 68d293d Merge "Invalidate network info cache in periodic task" into
     openstack-ci/fuel-6.1/2014.2
-  * e0a90ee Merge "Releasing DHCP in nova-network fixed" into openstack-
-    ci/fuel-6.1/2014.2
-
-  [ Marian Horban ]
-  * 4581376 Releasing DHCP in nova-network fixed
-  * 5d70159 Ensure bridge deleted with brctl delbr
-
-  [ Jon Bernard ]
-  * 0453bec Honor shared storage on resize revert
-
-  [ Sergey Nikitin ]
-  * 23280ff Merge "Fixed problem with extracting information from glance
-    object" into openstack-ci/fuel-6.1/2014.2
-  * 644b774 Fixed problem with extracting information from glance object
-
-  [ Luo Gangyi ]
-  * ed9be70 libvirt: partial fix for live-migration with config drive
 
   [ Roman Podoliaka ]
-  * 00408f6 Merge "Changed target version of NovaCompute object during
-    Service backport" into openstack-ci/fuel-6.1/2014.2
+  * 8451d94 Invalidate network info cache in periodic task
+  * 7c23164 rebuild: make sure server is shut down before volumes are
+    detached
+  * 8b5db95 Fix rebuild of an instance with a volume attached
 
- -- Roman Podoliaka <rpodolyaka@mirantis.com>  Thu, 16 Apr 2015 13:50:13 +0400
+  [ mos-infra-ci ]
+  * ff98182 Merge "LibvirtDriver: Add post_connection_terminated" into
+    openstack-ci/fuel-6.1/2014.2
+  * 346cf59 Merge "libvirt: optimize multipath call to identify IQN"
+    into openstack-ci/fuel-6.1/2014.2
+
+  [ Nikolas Hermanns ]
+  * beb7224 LibvirtDriver: Add post_connection_terminated
+
+ -- Nikolas Hermanns <nikolas.hermanns@ericsson.com>  Wed, 03 Jun 2015 00:14:40 +0400
+
+nova (1:2014.2.2-1~u14.04+mos1) mos6.1; urgency=medium
+
+  * Fix version according to Fuel versioning policy:
+    https://github.com/stackforge/fuel-specs/blob/master/specs/6.1/separate-mos-from-linux.rst
+  * No actual changes in source package
+  * Partial-Bug: #1454382
+
+ -- Ivan Udovichenko <iudovichenko@mirantis.com>  Tue, 12 May 2015 23:01:54 +0300
 
 nova (1:2014.2.2-fuel6.1+14.04+5) trusty; urgency=medium
 
