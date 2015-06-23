@@ -1,3 +1,11 @@
+nova (1:2014.2.3-0ubuntu1~cloud0calico0.12.1) trusty; urgency=medium
+
+  * Implement new 'ROUTED' interface type
+  * Change from VIF_TYPE_ROUTED to VIF_TYPE_TAP
+  * Use statically allocated MAC address for all ifs.
+
+ -- Neil Jerram <Neil.Jerram@metaswitch.com>  Tue, 23 Jun 2015 10:42:38 +0100
+
 nova (1:2014.2.3-0ubuntu1~cloud0) trusty-juno; urgency=medium
 
   * New upstream release for the Ubuntu Cloud Archive.
