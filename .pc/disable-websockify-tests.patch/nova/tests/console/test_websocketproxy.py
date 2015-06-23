@@ -17,12 +17,8 @@
 
 import mock
 from oslo.config import cfg
-import testtools
 
-try:
-    from nova.console import websocketproxy
-except ImportError:
-     websocketproxy = None
+from nova.console import websocketproxy
 from nova import exception
 from nova import test
 
@@ -31,7 +27,6 @@ CONF = cfg.CONF
 
 class NovaProxyRequestHandlerBaseTestCase(test.TestCase):
 
-    @testtools.skipIf(websocketproxy is None, "websockify not available")    
     def setUp(self):
         super(NovaProxyRequestHandlerBaseTestCase, self).setUp()
 

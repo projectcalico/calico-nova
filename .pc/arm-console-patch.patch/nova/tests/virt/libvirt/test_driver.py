@@ -1148,7 +1148,7 @@ class LibvirtConnTestCase(test.TestCase):
         self.assertEqual(1, cfg.vcpus)
         self.assertEqual(vm_mode.EXE, cfg.os_type)
         self.assertEqual("/sbin/init", cfg.os_init_path)
-        self.assertEqual("console=tty0 console=ttyS0 console=ttyAMA0", cfg.os_cmdline)
+        self.assertEqual("console=tty0 console=ttyS0", cfg.os_cmdline)
         self.assertIsNone(cfg.os_root)
         self.assertEqual(3, len(cfg.devices))
         self.assertIsInstance(cfg.devices[0],
@@ -1173,7 +1173,7 @@ class LibvirtConnTestCase(test.TestCase):
         self.assertEqual(1, cfg.vcpus)
         self.assertEqual(vm_mode.EXE, cfg.os_type)
         self.assertEqual("/sbin/init", cfg.os_init_path)
-        self.assertEqual("console=tty0 console=ttyS0 console=ttyAMA0", cfg.os_cmdline)
+        self.assertEqual("console=tty0 console=ttyS0", cfg.os_cmdline)
         self.assertIsNone(cfg.os_root)
         self.assertEqual(3, len(cfg.devices))
         self.assertIsInstance(cfg.devices[0],
