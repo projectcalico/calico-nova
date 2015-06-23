@@ -1650,10 +1650,7 @@ class CertificatesSamplesJsonTest(ApiSampleTestBaseV2):
     def test_get_root_certificate(self):
         response = self._do_get('os-certificates/root')
         subs = self._get_regexes()
-        try:
-            self._verify_response('certificate-get-root-resp', subs, response, 200)
-        except:
-            self.skipTest('Skipped by Ubuntu')
+        self._verify_response('certificate-get-root-resp', subs, response, 200)
 
 
 class CertificatesSamplesXmlTest(CertificatesSamplesJsonTest):
@@ -1699,7 +1696,6 @@ class MultipleCreateJsonTest(ServersSampleBase):
                       "Multiple_create")
 
     def test_multiple_create(self):
-        self.skipTest('Fails on Ubuntu buildds')
         subs = {
             'image_id': fake.get_valid_image_id(),
             'host': self._get_host(),
