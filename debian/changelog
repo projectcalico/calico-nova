@@ -1,3 +1,9 @@
+nova (1:2014.1.4-0ubuntu2.1calico0.12.1) trusty; urgency=medium
+
+  * Re-release with Calico patch after merging new Ubuntu version.
+
+ -- Neil Jerram <Neil.Jerram@metaswitch.com>  Tue, 23 Jun 2015 10:06:26 +0100
+
 nova (1:2014.1.4-0ubuntu2.1) trusty; urgency=medium
 
   * Ensure that compute manager restarts during instance power
