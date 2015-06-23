@@ -1,0 +1,123 @@
+From d8853eef181fabebc13bdfdaa98818cfcef318be Mon Sep 17 00:00:00 2001
+From: David McNally <dave.mcnally@hp.com>
+Date: Fri, 22 Nov 2013 16:18:53 +0000
+Subject: [PATCH] Recover from POWERING-* state on compute manager start-up
+
+If a compute manager is stopped / fails during POWERING-ON or
+POWERING-OFF operations then the instance will be left stuck in
+a transitional task_state.
+
+This change handles both these states by simply either retriggering
+the power on or power off request on start-up of the compute manager.
+If the operation had previously completed then retrying will
+essentially be a no-op so it is safe to handle instances in this
+state in this way.
+
+Closes bug: #1304333
+
+(cherry picked from commit 8f7056f48c115ee0939c76ce08531dab0f14e354)
+Change-Id: I262be6b13a764bc1355be34cdc0180e8e87f260b
+---
+ nova/compute/manager.py                | 26 ++++++++++++++++++
+ nova/tests/compute/test_compute_mgr.py | 48 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 74 insertions(+)
+
+diff --git a/nova/compute/manager.py b/nova/compute/manager.py
+index 2955796..900f861 100644
+--- a/nova/compute/manager.py
++++ b/nova/compute/manager.py
+@@ -919,6 +919,32 @@ class ComputeManager(manager.Manager):
+             instance.vm_state = vm_states.ACTIVE
+             instance.save()
+ 
++        if instance.task_state == task_states.POWERING_OFF:
++            try:
++                LOG.debug(_("Instance in transitional state %s at start-up "
++                            "retrying stop request"),
++                            instance['task_state'], instance=instance)
++                self.stop_instance(context, instance)
++            except Exception:
++                # we don't want that an exception blocks the init_host
++                msg = _('Failed to stop instance')
++                LOG.exception(msg, instance=instance)
++            finally:
++                return
++
++        if instance.task_state == task_states.POWERING_ON:
++            try:
++                LOG.debug(_("Instance in transitional state %s at start-up "
++                            "retrying start request"),
++                            instance['task_state'], instance=instance)
++                self.start_instance(context, instance)
++            except Exception:
++                # we don't want that an exception blocks the init_host
++                msg = _('Failed to start instance')
++                LOG.exception(msg, instance=instance)
++            finally:
++                return
++
+         net_info = compute_utils.get_nw_info_for_instance(instance)
+         try:
+             self.driver.plug_vifs(instance, net_info)
+diff --git a/nova/tests/compute/test_compute_mgr.py b/nova/tests/compute/test_compute_mgr.py
+index 92e1bb5..78ffdef 100644
+--- a/nova/tests/compute/test_compute_mgr.py
++++ b/nova/tests/compute/test_compute_mgr.py
+@@ -616,6 +616,54 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
+         instance.power_state = power_state.RUNNING
+         self._test_init_instance_cleans_reboot_state(instance)
+ 
++    def test_init_instance_retries_power_off(self):
++        instance = instance_obj.Instance(self.context)
++        instance.uuid = 'foo'
++        instance.id = 1
++        instance.vm_state = vm_states.ACTIVE
++        instance.task_state = task_states.POWERING_OFF
++        with mock.patch.object(self.compute, 'stop_instance'):
++            self.compute._init_instance(self.context, instance)
++            call = mock.call(self.context, instance)
++            self.compute.stop_instance.assert_has_calls([call])
++
++    def test_init_instance_retries_power_on(self):
++        instance = instance_obj.Instance(self.context)
++        instance.uuid = 'foo'
++        instance.id = 1
++        instance.vm_state = vm_states.ACTIVE
++        instance.task_state = task_states.POWERING_ON
++        with mock.patch.object(self.compute, 'start_instance'):
++            self.compute._init_instance(self.context, instance)
++            call = mock.call(self.context, instance)
++            self.compute.start_instance.assert_has_calls([call])
++
++    def test_init_instance_retries_power_on_silent_exception(self):
++        instance = instance_obj.Instance(self.context)
++        instance.uuid = 'foo'
++        instance.id = 1
++        instance.vm_state = vm_states.ACTIVE
++        instance.task_state = task_states.POWERING_ON
++        with mock.patch.object(self.compute, 'start_instance',
++                              return_value=Exception):
++            init_return = self.compute._init_instance(self.context, instance)
++            call = mock.call(self.context, instance)
++            self.compute.start_instance.assert_has_calls([call])
++            self.assertIsNone(init_return)
++
++    def test_init_instance_retries_power_off_silent_exception(self):
++        instance = instance_obj.Instance(self.context)
++        instance.uuid = 'foo'
++        instance.id = 1
++        instance.vm_state = vm_states.ACTIVE
++        instance.task_state = task_states.POWERING_OFF
++        with mock.patch.object(self.compute, 'stop_instance',
++                              return_value=Exception):
++            init_return = self.compute._init_instance(self.context, instance)
++            call = mock.call(self.context, instance)
++            self.compute.stop_instance.assert_has_calls([call])
++            self.assertIsNone(init_return)
++
+     def test_get_instances_on_driver(self):
+         fake_context = context.get_admin_context()
+ 
+-- 
+1.9.1
+

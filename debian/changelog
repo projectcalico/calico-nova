@@ -1,3 +1,13 @@
+nova (1:2014.1.4-0ubuntu2.1) trusty; urgency=medium
+
+  * Ensure that compute manager restarts during instance power
+    operations don't leave instances stuck in transitional task
+    states (LP: #1304333):
+    - d/p/recover-from-power-state-on-compute.patch
+      Cherry pick backport of upstream fix from OpenStack >= Juno.
+
+ -- Edward Hope-Morley <edward.hope-morley@canonical.com>  Wed, 22 Apr 2015 09:51:28 +0100
+
 nova (1:2014.1.4-0ubuntu2) trusty; urgency=medium
 
   [ Edward Hope-Morley ]
