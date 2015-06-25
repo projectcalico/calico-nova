@@ -1,3 +1,11 @@
+nova (1:2014.1.5-0ubuntu1calico0.12.1) trusty; urgency=medium
+
+  * Implement new 'ROUTED' interface type
+  * Change from VIF_TYPE_ROUTED to VIF_TYPE_TAP
+  * Use statically allocated MAC address for all ifs.
+
+ -- Neil Jerram <Neil.Jerram@metaswitch.com>  Thu, 25 Jun 2015 11:04:26 +0100
+
 nova (1:2014.1.5-0ubuntu1) trusty; urgency=medium
 
   * Resynchronize with stable/icehouse (08b5d48) (LP: #1467533):
