@@ -1,6 +1,0 @@
-disable-websockify-tests.patch
-fix-requirements.patch
-skip_ipv6_test.patch
-arm-console-patch.patch
-update-run-tests.patch
-calico.patch
