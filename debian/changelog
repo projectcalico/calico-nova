@@ -1,3 +1,9 @@
+nova (1:2014.1.5-0ubuntu1calico1.0.0+1) trusty; urgency=medium
+
+  * Calico version 1.0.0 release
+
+ -- Matt Dupre <matt@projectcalico.org>  Fri, 14 Aug 2015 12:54:11 +0100
+
 nova (1:2014.1.5-0ubuntu1calico0.12.1) trusty; urgency=medium
 
   * Implement new 'ROUTED' interface type
@@ -338,7 +344,7 @@ nova (1:2014.1~rc1-0ubuntu1) trusty; urgency=medium
 nova (1:2014.1~b3-0ubuntu2) trusty; urgency=medium
 
   * d/nova-common.postinst: Tidy detection of default sqlite to ensure
-    that db sync is only run against local databases (LP: #1290423). 
+    that db sync is only run against local databases (LP: #1290423).
 
  -- James Page <james.page@ubuntu.com>  Thu, 13 Mar 2014 11:00:23 +0000
 
@@ -383,7 +389,7 @@ nova (1:2014.1~b2-0ubuntu1) trusty; urgency=low
 
   [ James Page ]
   * d/nova-compute-*.conf: Update default hypervisor configurations
-    to use new libvirt section configuration. 
+    to use new libvirt section configuration.
   * d/control: Bump version for stevedore to >= 0.12.
   * d/p/*: Refreshed.
   * d/control: Add new nova-compute-libvirt package to support libvirt
@@ -453,7 +459,7 @@ nova (1:2013.2~rc2-0ubuntu1) saucy; urgency=low
   * New upstream release candidate (LP: #1239156):
     - d/p/fix-boto-versioning.patch: Cherry picked fix from upstream gerrit for
       test failures with boto < 2.13.
-  * d/control: Add epoch to versioned dependencies for python-oslo.config. 
+  * d/control: Add epoch to versioned dependencies for python-oslo.config.
 
  -- James Page <james.page@ubuntu.com>  Sun, 13 Oct 2013 11:05:46 +0100
 
@@ -502,7 +508,7 @@ nova (1:2013.2~b3-0ubuntu2) saucy; urgency=low
   * debian/tests: Removed tests for nova-compute-xen and nova-compute-xcp.
 nova (1:2013.2~b3-0ubuntu1) saucy; urgency=low
 
-  * New usptream release. 
+  * New usptream release.
   * debian/patches/avoid_requirements_cheetah.patch: Dropped
   * debian/patches/fix-sqlalchemy-0.7.9-usage.patch: Dropped
   * debian/patches/fix-requirements.patch: Refreshed.
@@ -514,7 +520,7 @@ nova (1:2013.2~b3-0ubuntu1) saucy; urgency=low
 
 nova (1:2013.2~b2-0ubuntu2) saucy; urgency=low
 
-  * debian/control: Fix python-sqlalchemy dependency. 
+  * debian/control: Fix python-sqlalchemy dependency.
 
  -- Chuck Short <zulcss@ubuntu.com>  Fri, 19 Jul 2013 15:03:16 -0400
 
@@ -532,11 +538,11 @@ nova (1:2013.2~b2-0ubuntu1) saucy; urgency=low
   * Add nova-xvpvncproxy upstart (LP: #1197163)
 
   [ James Page ]
-  * d/control: Update VCS fields for new branch locations. 
+  * d/control: Update VCS fields for new branch locations.
 
   [ Chuck Short ]
   * New upstream release.
-  * debian/patches/fix-requirements.patch: Combined several 
+  * debian/patches/fix-requirements.patch: Combined several
     patches into one.
   * debian/control: Replace python-quantumclient with python-neutronclient.
   * debian/patches/fix-sqlalchemy-0.7.9-usage.patch: Temporary patch to address a FTBFS
@@ -584,14 +590,14 @@ nova (1:2013.2~b1-0ubuntu1) saucy; urgency=low
 
 nova (1:2013.1-0ubuntu2) raring; urgency=low
 
-  * debian/nova-cells.upstart: Fix typo in upstart job. (LP: #1163218) 
+  * debian/nova-cells.upstart: Fix typo in upstart job. (LP: #1163218)
   * debian/control: Add iptables dependency. (LP: #1172393)
 
  -- Chuck Short <zulcss@ubuntu.com>  Wed, 24 Apr 2013 07:39:25 -0500
 
 nova (1:2013.1-0ubuntu1) raring; urgency=low
 
-  * New upstream release. 
+  * New upstream release.
 
  -- Chuck Short <zulcss@ubuntu.com>  Thu, 04 Apr 2013 10:42:21 -0500
 
@@ -599,7 +605,7 @@ nova (1:2013.1~rc2-0ubuntu1) raring; urgency=low
 
   [ James Page ]
   * d/control: Promote novnc and websockify to Depends for
-    nova-novncproxy (LP: #1066845). 
+    nova-novncproxy (LP: #1066845).
 
   [ Chuck Short ]
   *  New upstream release.
@@ -623,14 +629,14 @@ nova (1:2013.1~rc1-0ubuntu1) raring; urgency=low
 
   [ James Page ]
   * d/watch: Update uversionmangle to deal with upstream versioning
-    changes, remove tarballs.openstack.org. 
+    changes, remove tarballs.openstack.org.
 
  -- Chuck Short <zulcss@ubuntu.com>  Wed, 20 Mar 2013 12:59:22 -0500
 
 nova (2013.1.g3-0ubuntu1) raring; urgency=low
 
   [ Chuck Short ]
-  * New usptream release. 
+  * New usptream release.
   * debian/patches/debian/patches/fix-ubuntu-tests.patch: Refreshed.
   * debian/nova-baremetal.logrotate: Fix logfile path.
   * debian/control, debian/nova-spiceproxy.{install, logrotate, upstart}:
@@ -776,7 +782,7 @@ nova (2012.2-0ubuntu5) quantal; urgency=low
 nova (2012.2-0ubuntu4) quantal; urgency=low
 
   * debian/patches/ubuntu/ubuntu-fix-ec2-instance-id-mappings.patch:
-    Backport from trunk, Set read_deleted='yes' for instance_id_mappings. 
+    Backport from trunk, Set read_deleted='yes' for instance_id_mappings.
     (LP: #1061166)
 
  -- Chuck Short <zulcss@ubuntu.com>  Tue, 09 Oct 2012 11:51:15 -0500
@@ -794,7 +800,7 @@ nova (2012.2-0ubuntu2) quantal; urgency=low
 
   * debian/patches/ubuntu-fix-32-64-bit-iss.patch: Backport
     ba8cca2b59bb2904635520ad12f6d9a73f10242c, python's builtin
-    builtin hash returns different values on 32-bit and 64-bit architectures, 
+    builtin hash returns different values on 32-bit and 64-bit architectures,
     so it's safer to use a well-defined hash like MD5. This fixes a FTBFS
     in Ubuntu's buildds.
 
@@ -815,7 +821,7 @@ nova (2012.2-0ubuntu1) quantal; urgency=low
 
 nova (2012.2~rc3-0ubuntu1) quantal; urgency=low
 
-  * New upstream relase. 
+  * New upstream relase.
 
  -- Chuck Short <zulcss@ubuntu.com>  Wed, 26 Sep 2012 12:56:25 -0500
 
@@ -845,7 +851,7 @@ nova (2012.2~rc1-0ubuntu1) quantal; urgency=low
   * Fix lintian warnings
   * debian/*.lograote: compress logfiles when they are rotated. (LP:
     #1049915)
-  * debian/control: 
+  * debian/control:
     - Suggest ceph-common for nova-volume.
     - Add python-cinderclient as a build depends.
 
