@@ -5,7 +5,7 @@
 %global milestone rc2
 
 Name:             openstack-nova
-Version:          2014.2.2calico0.18
+Version:          2014.2.2calico1.0.0
 Release:          1%{?dist}
 Summary:          OpenStack Compute (nova)
 
@@ -803,6 +803,9 @@ exit 0
 %endif
 
 %changelog
+* Fri Aug 14 2015 Matt Dupre <matt@projectcalico.org> - 2014.2.2calico1.0.0-1
+- Calico version 1.0.0 release
+
 * Wed May 06 2015 Neil Jerram <neil.jerram@metaswitch.com> - 2014.2.2calico0.18-1
 - Implement new 'ROUTED' interface type.
 - Use statically allocated MAC address for all ifs.
