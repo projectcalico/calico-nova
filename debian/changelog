@@ -1,3 +1,9 @@
+nova (1:2015.1.0-0ubuntu1~cloud0calico1.0.0+1) trusty; urgency=medium
+
+  * Calico version 1.0.0 release
+
+ -- Matt Dupre <matt@projectcalico.org>  Fri, 14 Aug 2015 13:00:40 +0100
+
 nova (1:2015.1.0-0ubuntu1calico0.22) trusty; urgency=medium
 
   * Make Calico's Kilo change the same as at https://review.openstack.org/#/c/146914/
