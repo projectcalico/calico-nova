@@ -7,8 +7,8 @@
 %{!?upstream_version: %global upstream_version %{version}%{?milestone}}
 
 Name:             openstack-nova
-Version:          2015.1.0calico0.23
-Release:          3%{?milestone}%{?dist}
+Version:          2015.1.0calico1.0.0
+Release:          1%{?milestone}%{?dist}
 Summary:          OpenStack Compute (nova)
 
 Group:            Applications/System
@@ -802,6 +802,9 @@ exit 0
 %endif
 
 %changelog
+* Fri Aug 14 2015 Matt Dupre <matt@projectcalico.org> 2015.1.0calico1.0.0-1
+- Calico version 1.0.0 release
+
 * Wed Jun 03 2015 Matt Dupre <matt@projectcalico.org> 2015.1.0calico0.23-3
 - Implement new 'TAP' interface type.
 - Use statically allocated MAC address for all ifs.
