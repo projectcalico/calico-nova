@@ -1,0 +1,502 @@
+commit 879bbcf902c7a8ba0b3c58660b461f5b4918834e
+Author: Phil Day <philip.day@hp.com>
+Date:   Fri Jan 24 15:43:20 2014 +0000
+
+    Power off commands should give guests a chance to shutdown
+    
+    Currently in libvirt operations which power off an instance such as stop,
+    shelve, rescue, and resize simply destroy the underlying VM. Some
+    GuestOS's do not react well to this type of power failure, and so it would
+    be better if these operations followed the same approach as soft_reboot
+    and give the guest as chance to shutdown gracefully.
+    
+    The shutdown behavior is defined by two values:
+    
+    - shutdown_timeout defines the overall period a Guest is allowed to
+    complete it's shutdown.  The default valus is set via nova.conf and can be
+    overridden on a per image basis by image metadata allowing different types
+    of guest OS to specify how long they need to shutdown cleanly.
+    
+    - shutdown_retry_interval defines how frequently within that period
+    the Guest will be signaled to shutdown.  This is a protection against
+    guests that may not be ready to process the shutdown signal when it
+    is first issued. (e.g. still booting).  This is defined as a constant.
+    
+    This is one of a set of changes that will eventually expose the choice
+    of whether to give the GuestOS a chance to shutdown via the API.
+    
+    This change implements the libvirt changes to power_off() and adds
+    a clean shutdown to compute.manager.stop().
+    
+    Subsequent patches will:
+    - Add clean shutdown to Shelve
+    - Add clean shutdown to Rescue
+    - Convert soft_reboot to use the same approach
+    - Expose clean shutdown via rpcapi
+    - Expose clean shutdown via API
+    
+    Partially-Implements: blueprint user-defined-shutdown
+    Closes-Bug: #1196924
+    DocImpact
+    
+    Conflicts:
+    	nova/compute/manager.py
+    	nova/tests/virt/test_ironic_api_contracts.py
+    
+    Change-Id: I432b0b0c09db82797f28deb5617f02ee45a4278c
+    (cherry picked from commit c07ed15415c0ec3c5862f437f440632eff1e94df)
+
+diff --git a/nova/compute/manager.py b/nova/compute/manager.py
+index 990b92f..e27103f 100644
+--- a/nova/compute/manager.py
++++ b/nova/compute/manager.py
+@@ -183,6 +183,10 @@ timeout_opts = [
+                default=0,
+                help="Automatically confirm resizes after N seconds. "
+                     "Set to 0 to disable."),
++    cfg.IntOpt("shutdown_timeout",
++               default=60,
++               help="Total amount of time to wait in seconds for an instance "
++                    "to perform a clean shutdown."),
+ ]
+ 
+ running_deleted_opts = [
+@@ -575,6 +579,11 @@ class ComputeManager(manager.Manager):
+ 
+     target = messaging.Target(version='3.23')
+ 
++    # How long to wait in seconds before re-issuing a shutdown
++    # signal to a instance during power off.  The overall
++    # time to wait is set by CONF.shutdown_timeout.
++    SHUTDOWN_RETRY_INTERVAL = 10
++
+     def __init__(self, compute_driver=None, *args, **kwargs):
+         """Load configuration options and connect to the hypervisor."""
+         self.virtapi = ComputeVirtAPI(self)
+@@ -2137,6 +2146,25 @@ class ComputeManager(manager.Manager):
+                           instance=instance)
+                 self._set_instance_error_state(context, instance['uuid'])
+ 
++    def _get_power_off_values(self, context, instance, clean_shutdown):
++        """Get the timing configuration for powering down this instance."""
++        if clean_shutdown:
++            timeout = compute_utils.get_value_from_system_metadata(instance,
++                          key='image_os_shutdown_timeout', type=int,
++                          default=CONF.shutdown_timeout)
++            retry_interval = self.SHUTDOWN_RETRY_INTERVAL
++        else:
++            timeout = 0
++            retry_interval = 0
++
++        return timeout, retry_interval
++
++    def _power_off_instance(self, context, instance, clean_shutdown=True):
++        """Power off an instance on this host."""
++        timeout, retry_interval = self._get_power_off_values(context,
++                                        instance, clean_shutdown)
++        self.driver.power_off(instance, timeout, retry_interval)
++
+     def _shutdown_instance(self, context, instance,
+                            bdms, requested_networks=None, notify=True):
+         """Shutdown an instance on this host."""
+@@ -2308,16 +2336,23 @@ class ComputeManager(manager.Manager):
+     @reverts_task_state
+     @wrap_instance_event
+     @wrap_instance_fault
+-    def stop_instance(self, context, instance):
++    def stop_instance(self, context, instance, clean_shutdown=True):
+         """Stopping an instance on this host."""
+-        self._notify_about_instance_usage(context, instance, "power_off.start")
+-        self.driver.power_off(instance)
+-        current_power_state = self._get_power_state(context, instance)
+-        instance.power_state = current_power_state
+-        instance.vm_state = vm_states.STOPPED
+-        instance.task_state = None
+-        instance.save(expected_task_state=task_states.POWERING_OFF)
+-        self._notify_about_instance_usage(context, instance, "power_off.end")
++
++        @utils.synchronized(instance.uuid)
++        def do_stop_instance():
++            self._notify_about_instance_usage(context, instance,
++                                              "power_off.start")
++            self._power_off_instance(context, instance, clean_shutdown)
++            current_power_state = self._get_power_state(context, instance)
++            instance.power_state = current_power_state
++            instance.vm_state = vm_states.STOPPED
++            instance.task_state = None
++            instance.save(expected_task_state=task_states.POWERING_OFF)
++            self._notify_about_instance_usage(context, instance,
++                                              "power_off.end")
++
++        do_stop_instance()
+ 
+     def _power_on(self, context, instance):
+         network_info = self._get_instance_nw_info(context, instance)
+diff --git a/nova/compute/utils.py b/nova/compute/utils.py
+index 119510c..ced00eb 100644
+--- a/nova/compute/utils.py
++++ b/nova/compute/utils.py
+@@ -267,6 +267,25 @@ def get_image_metadata(context, image_service, image_id, instance):
+     return utils.get_image_from_system_metadata(system_meta)
+ 
+ 
++def get_value_from_system_metadata(instance, key, type, default):
++    """Get a value of a specified type from image metadata.
++
++    @param instance: The instance object
++    @param key: The name of the property to get
++    @param type: The python type the value is be returned as
++    @param default: The value to return if key is not set or not the right type
++    """
++    value = instance.system_metadata.get(key, default)
++    try:
++        return type(value)
++    except ValueError:
++        LOG.warning(_("Metadata value %(value)s for %(key)s is not of "
++                        "type %(type)s. Using default value %(default)s."),
++                    {'value': value, 'key': key, 'type': type,
++                     'default': default}, instance=instance)
++        return default
++
++
+ def notify_usage_exists(notifier, context, instance_ref, current_period=False,
+                         ignore_missing_network_data=True,
+                         system_metadata=None, extra_usage_info=None):
+diff --git a/nova/tests/api/ec2/test_cloud.py b/nova/tests/api/ec2/test_cloud.py
+index 00ea03e..9d037cf 100644
+--- a/nova/tests/api/ec2/test_cloud.py
++++ b/nova/tests/api/ec2/test_cloud.py
+@@ -2449,7 +2449,8 @@ class CloudTestCase(test.TestCase):
+ 
+         self.stubs.Set(fake_virt.FakeDriver, 'power_on', fake_power_on)
+ 
+-        def fake_power_off(self, instance):
++        def fake_power_off(self, instance,
++                           shutdown_timeout, shutdown_attempts):
+             virt_driver['powered_off'] = True
+ 
+         self.stubs.Set(fake_virt.FakeDriver, 'power_off', fake_power_off)
+diff --git a/nova/tests/compute/test_compute.py b/nova/tests/compute/test_compute.py
+index b126a52..cb680f3 100644
+--- a/nova/tests/compute/test_compute.py
++++ b/nova/tests/compute/test_compute.py
+@@ -2064,7 +2064,8 @@ class ComputeTestCase(BaseTestCase):
+ 
+         called = {'power_off': False}
+ 
+-        def fake_driver_power_off(self, instance):
++        def fake_driver_power_off(self, instance,
++                                  shutdown_timeout, shutdown_attempts):
+             called['power_off'] = True
+ 
+         self.stubs.Set(nova.virt.fake.FakeDriver, 'power_off',
+diff --git a/nova/tests/compute/test_compute_utils.py b/nova/tests/compute/test_compute_utils.py
+index 2304e95..7415f46 100644
+--- a/nova/tests/compute/test_compute_utils.py
++++ b/nova/tests/compute/test_compute_utils.py
+@@ -711,6 +711,28 @@ class ComputeGetImageMetadataTestCase(test.TestCase):
+         self.assertThat(expected, matchers.DictMatches(image_meta))
+ 
+ 
++class ComputeUtilsGetValFromSysMetadata(test.TestCase):
++
++    def test_get_value_from_system_metadata(self):
++        instance = fake_instance.fake_instance_obj('fake-context')
++        system_meta = {'int_val': 1,
++                       'int_string': '2',
++                       'not_int': 'Nope'}
++        instance.system_metadata = system_meta
++
++        result = compute_utils.get_value_from_system_metadata(
++                   instance, 'int_val', int, 0)
++        self.assertEqual(1, result)
++
++        result = compute_utils.get_value_from_system_metadata(
++                   instance, 'int_string', int, 0)
++        self.assertEqual(2, result)
++
++        result = compute_utils.get_value_from_system_metadata(
++                   instance, 'not_int', int, 0)
++        self.assertEqual(0, result)
++
++
+ class ComputeUtilsGetNWInfo(test.TestCase):
+     def test_instance_object_none_info_cache(self):
+         inst = fake_instance.fake_instance_obj('fake-context',
+diff --git a/nova/tests/virt/libvirt/test_libvirt.py b/nova/tests/virt/libvirt/test_libvirt.py
+index 2478e8e..ed1c8e8 100644
+--- a/nova/tests/virt/libvirt/test_libvirt.py
++++ b/nova/tests/virt/libvirt/test_libvirt.py
+@@ -5608,6 +5608,82 @@ class LibvirtConnTestCase(test.TestCase):
+             conn._hard_reboot(self.context, instance, network_info,
+                               block_device_info)
+ 
++    def _test_clean_shutdown(self, seconds_to_shutdown,
++                             timeout, retry_interval,
++                             shutdown_attempts, succeeds):
++        info_tuple = ('fake', 'fake', 'fake', 'also_fake')
++        shutdown_count = []
++
++        def count_shutdowns():
++            shutdown_count.append("shutdown")
++
++        # Mock domain
++        mock_domain = self.mox.CreateMock(libvirt.virDomain)
++
++        mock_domain.info().AndReturn(
++                (libvirt_driver.VIR_DOMAIN_RUNNING,) + info_tuple)
++        mock_domain.shutdown().WithSideEffects(count_shutdowns)
++
++        retry_countdown = retry_interval
++        for x in xrange(min(seconds_to_shutdown, timeout)):
++            mock_domain.info().AndReturn(
++                (libvirt_driver.VIR_DOMAIN_RUNNING,) + info_tuple)
++            if retry_countdown == 0:
++                mock_domain.shutdown().WithSideEffects(count_shutdowns)
++                retry_countdown = retry_interval
++            else:
++                retry_countdown -= 1
++
++        if seconds_to_shutdown < timeout:
++            mock_domain.info().AndReturn(
++                (libvirt_driver.VIR_DOMAIN_SHUTDOWN,) + info_tuple)
++
++        self.mox.ReplayAll()
++
++        def fake_lookup_by_name(instance_name):
++            return mock_domain
++
++        def fake_create_domain(**kwargs):
++            self.reboot_create_called = True
++
++        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
++        instance = {"name": "instancename", "id": "instanceid",
++                    "uuid": "875a8070-d0b9-4949-8b31-104d125c9a64"}
++        self.stubs.Set(conn, '_lookup_by_name', fake_lookup_by_name)
++        self.stubs.Set(conn, '_create_domain', fake_create_domain)
++        result = conn._clean_shutdown(instance, timeout, retry_interval)
++
++        self.assertEqual(succeeds, result)
++        self.assertEqual(shutdown_attempts, len(shutdown_count))
++
++    def test_clean_shutdown_first_time(self):
++        self._test_clean_shutdown(seconds_to_shutdown=2,
++                                  timeout=5,
++                                  retry_interval=3,
++                                  shutdown_attempts=1,
++                                  succeeds=True)
++
++    def test_clean_shutdown_with_retry(self):
++        self._test_clean_shutdown(seconds_to_shutdown=4,
++                                  timeout=5,
++                                  retry_interval=3,
++                                  shutdown_attempts=2,
++                                  succeeds=True)
++
++    def test_clean_shutdown_failure(self):
++        self._test_clean_shutdown(seconds_to_shutdown=6,
++                                  timeout=5,
++                                  retry_interval=3,
++                                  shutdown_attempts=2,
++                                  succeeds=False)
++
++    def test_clean_shutdown_no_wait(self):
++        self._test_clean_shutdown(seconds_to_shutdown=6,
++                                  timeout=0,
++                                  retry_interval=3,
++                                  shutdown_attempts=1,
++                                  succeeds=False)
++
+     def test_resume(self):
+         dummyxml = ("<domain type='kvm'><name>instance-0000000a</name>"
+                     "<devices>"
+diff --git a/nova/virt/baremetal/driver.py b/nova/virt/baremetal/driver.py
+index c1de148..b24e50a 100644
+--- a/nova/virt/baremetal/driver.py
++++ b/nova/virt/baremetal/driver.py
+@@ -399,8 +399,9 @@ class BareMetalDriver(driver.ComputeDriver):
+         """Cleanup after instance being destroyed."""
+         pass
+ 
+-    def power_off(self, instance, node=None):
++    def power_off(self, instance, timeout=0, retry_interval=0, node=None):
+         """Power off the specified instance."""
++        # TODO(PhilDay): Add support for timeout (clean shutdown)
+         if not node:
+             node = _get_baremetal_node_by_instance_uuid(instance['uuid'])
+         pm = get_power_manager(node=node, instance=instance)
+diff --git a/nova/virt/driver.py b/nova/virt/driver.py
+index 2fc95cc..2db2964 100644
+--- a/nova/virt/driver.py
++++ b/nova/virt/driver.py
+@@ -579,10 +579,13 @@ class ComputeDriver(object):
+         # TODO(Vek): Need to pass context in for access to auth_token
+         raise NotImplementedError()
+ 
+-    def power_off(self, instance):
++    def power_off(self, instance, timeout=0, retry_interval=0):
+         """Power off the specified instance.
+ 
+         :param instance: nova.objects.instance.Instance
++        :param timeout: time to wait for GuestOS to shutdown
++        :param retry_interval: How often to signal guest while
++                               waiting for it to shutdown
+         """
+         raise NotImplementedError()
+ 
+diff --git a/nova/virt/fake.py b/nova/virt/fake.py
+index ea175cb..19d81a8 100644
+--- a/nova/virt/fake.py
++++ b/nova/virt/fake.py
+@@ -179,7 +179,7 @@ class FakeDriver(driver.ComputeDriver):
+                                            block_device_info=None):
+         pass
+ 
+-    def power_off(self, instance):
++    def power_off(self, instance, shutdown_timeout=0, shutdown_attempts=0):
+         pass
+ 
+     def power_on(self, context, instance, network_info, block_device_info):
+diff --git a/nova/virt/hyperv/driver.py b/nova/virt/hyperv/driver.py
+index 566a9a2..e975cf7 100644
+--- a/nova/virt/hyperv/driver.py
++++ b/nova/virt/hyperv/driver.py
+@@ -111,7 +111,8 @@ class HyperVDriver(driver.ComputeDriver):
+     def resume(self, context, instance, network_info, block_device_info=None):
+         self._vmops.resume(instance)
+ 
+-    def power_off(self, instance):
++    def power_off(self, instance, timeout=0, retry_interval=0):
++        # TODO(PhilDay): Add support for timeout (clean shutdown)
+         self._vmops.power_off(instance)
+ 
+     def power_on(self, context, instance, network_info,
+diff --git a/nova/virt/libvirt/driver.py b/nova/virt/libvirt/driver.py
+index 43f4762..7cddad3 100644
+--- a/nova/virt/libvirt/driver.py
++++ b/nova/virt/libvirt/driver.py
+@@ -45,6 +45,7 @@ import glob
+ import mmap
+ import os
+ import shutil
++import six
+ import socket
+ import sys
+ import tempfile
+@@ -2157,8 +2158,85 @@ class LibvirtDriver(driver.ComputeDriver):
+         dom = self._lookup_by_name(instance['name'])
+         dom.resume()
+ 
+-    def power_off(self, instance):
++    def _clean_shutdown(self, instance, timeout, retry_interval):
++        """Attempt to shutdown the instance gracefully.
++
++        :param instance: The instance to be shutdown
++        :param timeout: How long to wait in seconds for the instance to
++                        shutdown
++        :param retry_interval: How often in seconds to signal the instance
++                               to shutdown while waiting
++
++        :returns: True if the shutdown succeeded
++        """
++
++        # List of states that represent a shutdown instance
++        SHUTDOWN_STATES = [power_state.SHUTDOWN,
++                           power_state.CRASHED]
++
++        try:
++            dom = self._lookup_by_name(instance["name"])
++        except exception.InstanceNotFound:
++            # If the instance has gone then we don't need to
++            # wait for it to shutdown
++            return True
++
++        (state, _max_mem, _mem, _cpus, _t) = dom.info()
++        state = LIBVIRT_POWER_STATE[state]
++        if state in SHUTDOWN_STATES:
++            LOG.info(_("Instance already shutdown."),
++                     instance=instance)
++            return True
++
++        LOG.debug("Shutting down instance from state %s", state,
++                  instance=instance)
++        dom.shutdown()
++        retry_countdown = retry_interval
++
++        for sec in six.moves.range(timeout):
++
++            dom = self._lookup_by_name(instance["name"])
++            (state, _max_mem, _mem, _cpus, _t) = dom.info()
++            state = LIBVIRT_POWER_STATE[state]
++
++            if state in SHUTDOWN_STATES:
++                LOG.info(_("Instance shutdown successfully after %d "
++                              "seconds."), sec, instance=instance)
++                return True
++
++            # Note(PhilD): We can't assume that the Guest was able to process
++            #              any previous shutdown signal (for example it may
++            #              have still been startingup, so within the overall
++            #              timeout we re-trigger the shutdown every
++            #              retry_interval
++            if retry_countdown == 0:
++                retry_countdown = retry_interval
++                # Instance could shutdown at any time, in which case we
++                # will get an exception when we call shutdown
++                try:
++                    LOG.debug("Instance in state %s after %d seconds - "
++                              "resending shutdown", state, sec,
++                              instance=instance)
++                    dom.shutdown()
++                except libvirt.libvirtError:
++                    # Assume this is because its now shutdown, so loop
++                    # one more time to clean up.
++                    LOG.debug("Ignoring libvirt exception from shutdown "
++                              "request.", instance=instance)
++                    continue
++            else:
++                retry_countdown -= 1
++
++            time.sleep(1)
++
++        LOG.info(_("Instance failed to shutdown in %d seconds."),
++                 timeout, instance=instance)
++        return False
++
++    def power_off(self, instance, timeout=0, retry_interval=0):
+         """Power off the specified instance."""
++        if timeout:
++            self._clean_shutdown(instance, timeout, retry_interval)
+         self._destroy(instance)
+ 
+     def power_on(self, context, instance, network_info,
+diff --git a/nova/virt/vmwareapi/driver.py b/nova/virt/vmwareapi/driver.py
+index e514bbb..aedc5c3 100644
+--- a/nova/virt/vmwareapi/driver.py
++++ b/nova/virt/vmwareapi/driver.py
+@@ -704,8 +704,9 @@ class VMwareVCDriver(VMwareESXDriver):
+         _vmops = self._get_vmops_for_compute_node(instance['node'])
+         _vmops.unrescue(instance)
+ 
+-    def power_off(self, instance):
++    def power_off(self, instance, timeout=0, retry_interval=0):
+         """Power off the specified instance."""
++        # TODO(PhilDay): Add support for timeout (clean shutdown)
+         _vmops = self._get_vmops_for_compute_node(instance['node'])
+         _vmops.power_off(instance)
+ 
+diff --git a/nova/virt/xenapi/driver.py b/nova/virt/xenapi/driver.py
+index e7a0d1c..ccbe765 100644
+--- a/nova/virt/xenapi/driver.py
++++ b/nova/virt/xenapi/driver.py
+@@ -325,8 +325,9 @@ class XenAPIDriver(driver.ComputeDriver):
+         """Unrescue the specified instance."""
+         self._vmops.unrescue(instance)
+ 
+-    def power_off(self, instance):
++    def power_off(self, instance, timeout=0, retry_interval=0):
+         """Power off the specified instance."""
++        # TODO(PhilDay): Add support for timeout (clean shutdown)
+         self._vmops.power_off(instance)
+ 
+     def power_on(self, context, instance, network_info,

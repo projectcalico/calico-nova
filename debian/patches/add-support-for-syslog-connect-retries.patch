@@ -1,0 +1,115 @@
+From fa2a6c6b6aee59b1a98fa7b93f55405457449bf0 Mon Sep 17 00:00:00 2001
+From: Edward Hope-Morley <edward.hope-morley@canonical.com>
+Date: Thu, 18 Jun 2015 13:38:58 +0100
+Subject: [PATCH] Add support for syslog connect retries
+
+If we have requested logging to syslog and syslog is
+not yet ready we shoudl allow for retry attempts. This
+patch provides a new option syslog-connect-retries to
+allow for retries with a 5 second interval between
+each retry.
+
+Closes-Bug: 1459046
+Co-authored-by: Liang Chen <liang.chen@canonical.com>
+Conflicts:
+	nova/openstack/common/log.py
+
+Change-Id: I88269a75c56c68443230620217a469aebee523f8
+---
+ nova/openstack/common/log.py | 58 +++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 46 insertions(+), 12 deletions(-)
+
+diff --git a/nova/openstack/common/log.py b/nova/openstack/common/log.py
+index cdc439a..71700b7 100644
+--- a/nova/openstack/common/log.py
++++ b/nova/openstack/common/log.py
+@@ -34,7 +34,9 @@ import logging.config
+ import logging.handlers
+ import os
+ import re
++import socket
+ import sys
++import time
+ import traceback
+ 
+ from oslo.config import cfg
+@@ -118,6 +120,10 @@ logging_cli_opts = [
+                 help='Use syslog for logging. '
+                      'Existing syslog format is DEPRECATED during I, '
+                      'and then will be changed in J to honor RFC5424'),
++    cfg.IntOpt('syslog-connect-retries',
++               default=3,
++               help='Number of attempts with a five second interval to retry '
++                    'connecting to syslog. (if use-syslog=True)'),
+     cfg.BoolOpt('use-syslog-rfc-format',
+                 # TODO(bogdando) remove or use True after existing
+                 #    syslog format deprecation in J
+@@ -490,18 +496,6 @@ def _setup_logging_from_conf():
+     for handler in log_root.handlers:
+         log_root.removeHandler(handler)
+ 
+-    if CONF.use_syslog:
+-        facility = _find_facility_from_conf()
+-        # TODO(bogdando) use the format provided by RFCSysLogHandler
+-        #   after existing syslog format deprecation in J
+-        if CONF.use_syslog_rfc_format:
+-            syslog = RFCSysLogHandler(address='/dev/log',
+-                                      facility=facility)
+-        else:
+-            syslog = logging.handlers.SysLogHandler(address='/dev/log',
+-                                                    facility=facility)
+-        log_root.addHandler(syslog)
+-
+     logpath = _get_log_file_path()
+     if logpath:
+         filelog = logging.handlers.WatchedFileHandler(logpath)
+@@ -548,6 +542,46 @@ def _setup_logging_from_conf():
+         logger = logging.getLogger(mod)
+         logger.setLevel(level)
+ 
++    if CONF.use_syslog:
++        retries = CONF.syslog_connect_retries
++        syslog_ready = False
++        while True:
++            try:
++                facility = _find_facility_from_conf()
++                # TODO(bogdando) use the format provided by RFCSysLogHandler
++                #   after existing syslog format deprecation in J
++                if CONF.use_syslog_rfc_format:
++                    syslog = RFCSysLogHandler(address='/dev/log',
++                                              facility=facility)
++                else:
++                    syslog = logging.handlers.SysLogHandler(address='/dev/log',
++                                                            facility=facility)
++                log_root.addHandler(syslog)
++                syslog_ready = True
++            except socket.error:
++                if CONF.syslog_connect_retries <= 0:
++                    log_root.error(_('Connection to syslog failed and no '
++                                     'retry attempts requested'))
++                    break
++
++                if retries:
++                    log_root.info(_('Connection to syslog failed - '
++                                    'retrying in 5 seconds'))
++                    retries -= 1
++                else:
++                    log_root.error(_('Connection to syslog failed and '
++                                     'max retry attempts reached'))
++                    break
++
++                time.sleep(5)
++            else:
++                break
++
++        if not syslog_ready:
++            log_root.error(_('Unable to add syslog handler. Verify that '
++                             'syslog is running.'))
++
++
+ _loggers = {}
+ 
+ 
+-- 
+1.9.1
+
