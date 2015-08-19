@@ -1,3 +1,20 @@
+nova (1:2014.1.5-0ubuntu1.2) trusty; urgency=medium
+
+  * Add rsyslog retry support (LP: #1459046)
+    - d/p/add-support-for-syslog-connect-retries.patch
+  * Add vm clean shutdown support (LP: #1196924)
+    - d/p/clean-shutdown.patch
+
+ -- Edward Hope-Morley <edward.hope-morley@canonical.com>  Thu, 16 Jul 2015 11:55:57 +0100
+
+nova (1:2014.1.5-0ubuntu1.1) trusty; urgency=medium
+
+    [ Edward Hope-Morley ]
+    - d/nova-compute.upstart: Fix (another) race between nova-compute
+      and neutron-ovs-cleanup (LP: #1471022)
+
+ -- Edward Hope-Morley <edward.hope-morley@canonical.com>  Wed, 08 Jul 2015 09:44:18 -0500
+
 nova (1:2014.1.5-0ubuntu1) trusty; urgency=medium
 
   * Resynchronize with stable/icehouse (08b5d48) (LP: #1467533):

@@ -4,3 +4,5 @@ fix-requirements.patch
 skip_ipv6_test.patch
 arm-console-patch.patch
 update-run-tests.patch
+add-support-for-syslog-connect-retries.patch
+clean-shutdown.patch
