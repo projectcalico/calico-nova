@@ -1,8 +1,16 @@
-nova (1:2014.2.3-0ubuntu1~cloud0) trusty-juno; urgency=medium
+nova (1:2014.2.3-0ubuntu1.2~cloud0) trusty-juno; urgency=medium
 
-  * New upstream release for the Ubuntu Cloud Archive.
+  * Add rsyslog retry support (LP: #1459046)
+    - d/p/add-support-for-syslog-connect-retries.patch
 
- -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Mon, 11 May 2015 08:49:15 +0000
+ -- Edward Hope-Morley <edward.hope-morley@canonical.com>  Thu, 16 Jul 2015 10:42:25 +0100
+
+nova (1:2014.2.3-0ubuntu1.1) utopic; urgency=medium
+
+  * d/nova-compute.upstart: Fix (another) race between nova-compute
+    and neutron-ovs-cleanup (LP: #1471022).
+
+ -- Edward Hope-Morley <edward.hope-morley@canonical.com>  Mon, 06 Jul 2015 12:06:00 +0100
 
 nova (1:2014.2.3-0ubuntu1) utopic; urgency=medium
 
