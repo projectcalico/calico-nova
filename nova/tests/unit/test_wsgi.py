@@ -311,6 +311,7 @@ class TestWSGIServerWithSSL(test.NoDBTestCase):
         server.stop()
         server.wait()
 
+    @testtools.skip('LP #1470860')
     @testtools.skipIf(not utils.is_ipv6_supported(), "no ipv6 support")
     def test_app_using_ipv6_and_ssl(self):
         greetings = 'Hello, World!!!'

@@ -300,6 +300,8 @@ class LibvirtISCSIVolumeDriver(LibvirtBaseVolumeDriver):
     """Driver to attach Network volumes to libvirt."""
     supported_transports = ['be2iscsi', 'bnx2i', 'cxgb3i',
                             'cxgb4i', 'qla4xxx', 'ocs']
+    mpath_dev_check_re = re.compile("\s+dm-\d+\s+")
+    path_check_re = re.compile("\s+\d+:\d+:\d+:\d+\s+")
 
     def __init__(self, connection):
         super(LibvirtISCSIVolumeDriver, self).__init__(connection,
@@ -646,8 +648,7 @@ class LibvirtISCSIVolumeDriver(LibvirtBaseVolumeDriver):
             return
 
         # Get a target for all other multipath devices
-        other_iqns = [self._get_multipath_iqn(device)
-                      for device in devices]
+        other_iqns = self._get_multipath_iqns(devices)
         # Get all the targets for the current multipath device
         current_iqns = [iqn for ip, iqn in ips_iqns]
 
@@ -792,14 +793,48 @@ class LibvirtISCSIVolumeDriver(LibvirtBaseVolumeDriver):
 
         self._rescan_multipath()
 
-    def _get_multipath_iqn(self, multipath_device):
+    def _do_get_multipath_iqns(self, multipath_devices, split_string):
+        mpath_map = self._get_multipath_device_map()
         entries = self._get_iscsi_devices()
+        iqns = []
         for entry in entries:
             entry_real_path = os.path.realpath("/dev/disk/by-path/%s" % entry)
-            entry_multipath = self._get_multipath_device_name(entry_real_path)
-            if entry_multipath == multipath_device:
-                return entry.split("iscsi-")[1].split("-lun")[0]
-        return None
+            if entry_real_path not in mpath_map:
+                continue
+            entry_multipath = mpath_map[entry_real_path]
+            if entry_multipath in multipath_devices:
+                iqns.append(entry.split(split_string)[1].split("-lun")[0])
+        return iqns
+
+    def _get_multipath_iqns(self, multipath_devices):
+        return self._do_get_multipath_iqns(multipath_devices, "iscsi-")
+
+    def _get_multipath_device_map(self):
+        mpath_cmd = ['-ll']
+
+        out = self._run_multipath(mpath_cmd, check_exit_code=[0, 1])[0]
+        mpath_dev = None
+        mpath_map = {}
+        for line in out.splitlines():
+            # ignore udev errors
+            if "scsi_id" in line:
+                continue
+
+            m = self.mpath_dev_check_re.split(line)
+            if len(m) >= 2:
+                mpath_dev = os.path.join('/dev/mapper/', m[0].split(" ")[0])
+                continue
+
+            m = self.path_check_re.split(line)
+            if len(m) >= 2:
+                mpath_map[os.path.join(
+                    '/dev/', m[1].split(" ")[0])] = mpath_dev
+                continue
+        if len(out) and (mpath_dev is None or len(mpath_map) == 0):
+            LOG.warn(_LW("Failed to parse the output of multipath -ll: "
+                         "mpath_dev=%(mpath)s, map size=%(mapsize)s"),
+                     {'mpath': mpath_dev, 'mapsize': len(mpath_map)})
+        return mpath_map
 
     def _run_iscsiadm_bare(self, iscsi_command, **kwargs):
         check_exit_code = kwargs.pop('check_exit_code', 0)
@@ -863,14 +898,8 @@ class LibvirtISERVolumeDriver(LibvirtISCSIVolumeDriver):
     def _get_transport(self):
         return 'iser'
 
-    def _get_multipath_iqn(self, multipath_device):
-        entries = self._get_iscsi_devices()
-        for entry in entries:
-            entry_real_path = os.path.realpath("/dev/disk/by-path/%s" % entry)
-            entry_multipath = self._get_multipath_device_name(entry_real_path)
-            if entry_multipath == multipath_device:
-                return entry.split("iser-")[1].split("-lun")[0]
-        return None
+    def _get_multipath_iqns(self, multipath_devices):
+        return self._do_get_multipath_iqns(multipath_devices, "iser-")
 
 
 class LibvirtNFSVolumeDriver(LibvirtBaseVolumeDriver):

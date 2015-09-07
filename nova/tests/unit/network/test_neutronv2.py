@@ -145,7 +145,7 @@ class TestNeutronClient(test.NoDBTestCase):
                           neutronapi.get_client,
                           my_context)
 
-    @mock.patch('nova.network.neutronv2.api._ADMIN_AUTH')
+    @mock.patch('nova.network.neutronv2.api._ADMIN_AUTH.auth_plugin')
     @mock.patch.object(client.Client, "list_networks", new=mock.Mock())
     def test_reuse_admin_token(self, m):
         self.flags(url='http://anyhost/', group='neutron')
@@ -3669,7 +3669,7 @@ class TestNeutronClientForAdminScenarios(test.NoDBTestCase):
             # the context has an auth_token.
             context_client = neutronapi.get_client(my_context, True)
 
-        admin_auth = neutronapi._ADMIN_AUTH
+        admin_auth = neutronapi._ADMIN_AUTH.auth_plugin
 
         self.assertEqual(CONF.neutron.admin_auth_url, admin_auth.auth_url)
         self.assertEqual(CONF.neutron.admin_password, admin_auth.password)
@@ -3691,9 +3691,9 @@ class TestNeutronClientForAdminScenarios(test.NoDBTestCase):
 
         self.assertEqual(CONF.neutron.timeout, neutronapi._SESSION.timeout)
 
-        self.assertEqual(token_value, context_client.httpclient.auth.token)
+        self.assertEqual(token_value, context_client.httpclient.auth_token)
         self.assertEqual(CONF.neutron.url,
-                         context_client.httpclient.auth.endpoint)
+                         context_client.httpclient.endpoint_url)
 
     def test_get_client_for_admin(self):
         self._test_get_client_for_admin()

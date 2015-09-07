@@ -14,7 +14,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-
+import threading
 import time
 import uuid
 
@@ -136,14 +136,13 @@ soft_external_network_attach_authorize = extensions.soft_core_authorizer(
     'network', 'attach_external_network')
 
 _SESSION = None
-_ADMIN_AUTH = None
 
 
 def reset_state():
     global _ADMIN_AUTH
     global _SESSION
 
-    _ADMIN_AUTH = None
+    _ADMIN_AUTH.auth_plugin = None
     _SESSION = None
 
 
@@ -176,6 +175,15 @@ def _load_auth_plugin(conf):
     raise neutron_client_exc.Unauthorized(message=err_msg)
 
 
+class ThreadLocalAuthPlugin(threading.local):
+    def __init__(self):
+        super(ThreadLocalAuthPlugin, self).__init__()
+        self.auth_plugin = _load_auth_plugin(CONF)
+
+
+_ADMIN_AUTH = ThreadLocalAuthPlugin()
+
+
 def get_client(context, admin=False):
     # NOTE(dprince): In the case where no auth_token is present we allow use of
     # neutron admin tenant credentials if it is an admin context.  This is to
@@ -196,16 +204,10 @@ def get_client(context, admin=False):
         # auth plugin from it (whilst locked). This may or may not require
         # reauthentication. We then use the static token plugin to issue the
         # actual request with that current token in a thread safe way.
-        if not _ADMIN_AUTH:
-            _ADMIN_AUTH = _load_auth_plugin(CONF)
+        if _ADMIN_AUTH.auth_plugin is None:
+            _ADMIN_AUTH.auth_plugin = _load_auth_plugin(CONF)
 
-        with lockutils.lock('neutron_admin_auth_token_lock'):
-            # FIXME(jamielennox): We should also retrieve the endpoint from the
-            # catalog here rather than relying on setting it in CONF.
-            auth_token = _ADMIN_AUTH.get_token(_SESSION)
-
-        # FIXME(jamielennox): why aren't we using the service catalog?
-        auth_plugin = token_endpoint.Token(CONF.neutron.url, auth_token)
+        auth_plugin = _ADMIN_AUTH.auth_plugin
 
     elif context.auth_token:
         auth_plugin = context.get_auth_plugin()

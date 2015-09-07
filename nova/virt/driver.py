@@ -447,6 +447,11 @@ class ComputeDriver(object):
         """Detach the disk attached to the instance."""
         raise NotImplementedError()
 
+    def post_connection_terminated(self, bdm, connection_info=None,
+                                   block_device_info=None):
+        """Perform post connection terminated steps."""
+        pass
+
     def swap_volume(self, old_connection_info, new_connection_info,
                     instance, mountpoint, resize_to):
         """Replace the disk attached to the instance.

@@ -115,6 +115,29 @@ class TestConversions(test.NoDBTestCase):
     def test_extracting_missing_attributes_exclude_locations(self):
         self._test_extracting_missing_attributes(include_locations=False)
 
+    def test_extracting_attributes_from_properties(self):
+        # fake image class with disk_format and container_format in properties
+        class FakeImageClass(dict):
+            id = 'b31aa5dd-f07a-4748-8f15-398346887584'
+            deleted = False
+            protected = False
+            min_disk = 0
+            created_at = '2014-05-20T08:16:48'
+            size = 0
+            status = None
+            is_public = False
+            min_ram = 0
+            owner = '980ec4870033453ead65c0470a78b8a8'
+            updated_at = '2014-05-20T08:16:48'
+            properties = {'disk_format': 'qcow2',
+                          'container_format': 'bare'}
+
+        image = FakeImageClass()
+        output = glance._extract_attributes(image)
+
+        self.assertEqual('qcow2', output.get('disk_format', None))
+        self.assertEqual('bare', output.get('container_format', None))
+
 
 class TestExceptionTranslations(test.NoDBTestCase):
 

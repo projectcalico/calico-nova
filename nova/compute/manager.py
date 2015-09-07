@@ -162,8 +162,8 @@ interval_opts = [
     cfg.IntOpt('shelved_offload_time',
                default=0,
                help='Time in seconds before a shelved instance is eligible '
-                    'for removing from a host.  -1 never offload, 0 offload '
-                    'when shelved'),
+                    'for removing from a host. -1 never offload, 0 offload '
+                    'immediately when shelved'),
     cfg.IntOpt('instance_delete_interval',
                default=300,
                help='Interval in seconds for retrying failed instance file '
@@ -267,15 +267,21 @@ def errors_out_migration(function):
     def decorated_function(self, context, *args, **kwargs):
         try:
             return function(self, context, *args, **kwargs)
-        except Exception:
+        except Exception as ex:
             with excutils.save_and_reraise_exception():
                 wrapped_func = utils.get_wrapped_function(function)
                 keyed_args = safe_utils.getcallargs(wrapped_func, context,
                                                     *args, **kwargs)
                 migration = keyed_args['migration']
-                status = migration.status
-                if status not in ['migrating', 'post-migrating']:
-                    return
+
+                # NOTE(rajesht): If InstanceNotFound error is thrown from
+                # decorated function, migration status should be set to
+                # 'error', without checking current migration status.
+                if not isinstance(ex, exception.InstanceNotFound):
+                    status = migration.status
+                    if status not in ['migrating', 'post-migrating']:
+                        return
+
                 migration.status = 'error'
                 try:
                     with migration.obj_as_admin():
@@ -554,6 +560,10 @@ class InstanceEvents(object):
         """
         @utils.synchronized(self._lock_name(instance))
         def _clear_events():
+            if self._events is None:
+                LOG.debug('Unexpected attempt to clear events during shutdown',
+                          instance=instance)
+                return dict()
             return self._events.pop(instance.uuid, {})
         return _clear_events()
 
@@ -2617,9 +2627,9 @@ class ComputeManager(manager.Manager):
                 # NOTE(vish): actual driver detach done in driver.destroy, so
                 #             just tell cinder that we are done with it.
                 connector = self.driver.get_volume_connector(instance)
-                self.volume_api.terminate_connection(context,
-                                                     bdm.volume_id,
-                                                     connector)
+                self._volume_api_terminate_connection(
+                    context, connector, bdm,
+                    block_device_info=block_device_info)
                 self.volume_api.detach(context, bdm.volume_id)
             except exception.DiskNotFound as exc:
                 LOG.debug('Ignoring DiskNotFound: %s', exc,
@@ -2914,11 +2924,13 @@ class ComputeManager(manager.Manager):
             # partitions.
             raise exception.PreserveEphemeralNotSupported()
 
-        detach_block_devices(context, bdms)
-
         if not recreate:
-            self.driver.destroy(context, instance, network_info,
+            self._power_off_instance(context, instance, clean_shutdown=True)
+            self.driver.destroy(context, instance,
+                                network_info=network_info,
                                 block_device_info=block_device_info)
+
+        detach_block_devices(context, bdms)
 
         instance.task_state = task_states.REBUILD_BLOCK_DEVICE_MAPPING
         instance.save(expected_task_state=[task_states.REBUILDING])
@@ -3062,7 +3074,8 @@ class ComputeManager(manager.Manager):
             def detach_block_devices(context, bdms):
                 for bdm in bdms:
                     if bdm.is_volume:
-                        self.volume_api.detach(context, bdm.volume_id)
+                        self._detach_volume(context, bdm.volume_id, instance,
+                                            destroy_bdm=False)
 
             files = self._decode_files(injected_files)
 
@@ -3726,6 +3739,7 @@ class ComputeManager(manager.Manager):
     @wrap_exception()
     @reverts_task_state
     @wrap_instance_event
+    @errors_out_migration
     @wrap_instance_fault
     def revert_resize(self, context, instance, migration, reservations):
         """Destroys the new instance on the destination machine.
@@ -3766,7 +3780,8 @@ class ComputeManager(manager.Manager):
             self.driver.destroy(context, instance, network_info,
                                 block_device_info, destroy_disks)
 
-            self._terminate_volume_connections(context, instance, bdms)
+            self._terminate_volume_connections(context, instance, bdms,
+                                               block_device_info)
 
             migration.status = 'reverted'
             with migration.obj_as_admin():
@@ -3782,6 +3797,7 @@ class ComputeManager(manager.Manager):
     @wrap_exception()
     @reverts_task_state
     @wrap_instance_event
+    @errors_out_migration
     @wrap_instance_fault
     def finish_revert_resize(self, context, instance, reservations, migration):
         """Finishes the second half of reverting a resize.
@@ -4038,7 +4054,8 @@ class ComputeManager(manager.Manager):
                     block_device_info,
                     timeout, retry_interval)
 
-            self._terminate_volume_connections(context, instance, bdms)
+            self._terminate_volume_connections(context, instance, bdms,
+                                               block_device_info)
 
             migration_p = obj_base.obj_to_primitive(migration)
             self.network_api.migrate_instance_start(context,
@@ -4062,12 +4079,14 @@ class ComputeManager(manager.Manager):
                                               network_info=network_info)
             self.instance_events.clear_events_for_instance(instance)
 
-    def _terminate_volume_connections(self, context, instance, bdms):
+    def _terminate_volume_connections(self, context, instance, bdms,
+                                      block_device_info):
         connector = self.driver.get_volume_connector(instance)
         for bdm in bdms:
             if bdm.is_volume:
-                self.volume_api.terminate_connection(context, bdm.volume_id,
-                                                     connector)
+                self._volume_api_terminate_connection(
+                    context, connector, bdm,
+                    block_device_info=block_device_info)
 
     @staticmethod
     def _set_instance_info(instance, instance_type):
@@ -4844,7 +4863,15 @@ class ComputeManager(manager.Manager):
         self._notify_about_instance_usage(
             context, instance, "volume.attach", extra_usage_info=info)
 
-    def _detach_volume(self, context, instance, bdm):
+    def _get_connection_info(self, bdm):
+        connection_info = jsonutils.loads(bdm.connection_info)
+        # NOTE(vish): We currently don't use the serial when disconnecting,
+        #             but added for completeness in case we ever do.
+        if connection_info and 'serial' not in connection_info:
+            connection_info['serial'] = bdm.volume_id
+        return connection_info
+
+    def _driver_detach_volume(self, context, instance, bdm):
         """Do the actual driver detach using block device mapping."""
         mp = bdm.device_name
         volume_id = bdm.volume_id
@@ -4853,11 +4880,7 @@ class ComputeManager(manager.Manager):
                   {'volume_id': volume_id, 'mp': mp},
                   context=context, instance=instance)
 
-        connection_info = jsonutils.loads(bdm.connection_info)
-        # NOTE(vish): We currently don't use the serial when disconnecting,
-        #             but added for completeness in case we ever do.
-        if connection_info and 'serial' not in connection_info:
-            connection_info['serial'] = volume_id
+        connection_info = self._get_connection_info(bdm)
         try:
             if not self.driver.instance_exists(instance):
                 LOG.warning(_LW('Detaching volume from unknown instance'),
@@ -4883,12 +4906,18 @@ class ComputeManager(manager.Manager):
                               context=context, instance=instance)
                 self.volume_api.roll_detaching(context, volume_id)
 
-    @object_compat
-    @wrap_exception()
-    @reverts_task_state
-    @wrap_instance_fault
-    def detach_volume(self, context, volume_id, instance):
-        """Detach a volume from an instance."""
+    def _detach_volume(self, context, volume_id, instance, destroy_bdm=True):
+        """Detach a volume from an instance.
+
+        :param context: security context
+        :param volume_id: the volume id
+        :param instance: the Instance object to detach the volume from
+        :param destroy_bdm: if True, the corresponding BDM entry will be marked
+                            as deleted. Disabling this is useful for operations
+                            like rebuild, when we don't want to destroy BDM
+
+        """
+
         bdm = objects.BlockDeviceMapping.get_by_volume_id(
                 context, volume_id)
         if CONF.volume_usage_poll_interval > 0:
@@ -4912,14 +4941,30 @@ class ComputeManager(manager.Manager):
                                                     instance,
                                                     update_totals=True)
 
-        self._detach_volume(context, instance, bdm)
+        self._driver_detach_volume(context, instance, bdm)
         connector = self.driver.get_volume_connector(instance)
-        self.volume_api.terminate_connection(context, volume_id, connector)
-        bdm.destroy()
+
+        connection_info = self._get_connection_info(bdm)
+        self._volume_api_terminate_connection(
+            context, connector, bdm, volume_id=volume_id,
+            connection_info=connection_info)
+
+        if destroy_bdm:
+            bdm.destroy()
+
         info = dict(volume_id=volume_id)
         self._notify_about_instance_usage(
             context, instance, "volume.detach", extra_usage_info=info)
         self.volume_api.detach(context.elevated(), volume_id)
+
+    @object_compat
+    @wrap_exception()
+    @reverts_task_state
+    @wrap_instance_fault
+    def detach_volume(self, context, volume_id, instance):
+        """Detach a volume from an instance."""
+
+        self._detach_volume(context, volume_id, instance)
 
     def _init_volume_connection(self, context, new_volume_id,
                                 old_volume_id, connector, instance, bdm):
@@ -4974,9 +5019,12 @@ class ComputeManager(manager.Manager):
         finally:
             conn_volume = new_volume_id if failed else old_volume_id
             if new_cinfo:
-                self.volume_api.terminate_connection(context,
-                                                     conn_volume,
-                                                     connector)
+                LOG.debug("swap_volume: calling Cinder terminate_connection "
+                          "for %(volume)s", {'volume': conn_volume},
+                          context=context, instance=instance)
+                self._volume_api_terminate_connection(
+                    context, connector, bdm, volume_id=conn_volume,
+                    connection_info=new_cinfo)
             # If Cinder initiated the swap, it will keep
             # the original ID
             comp_ret = self.volume_api.migrate_volume_completion(
@@ -5036,9 +5084,12 @@ class ComputeManager(manager.Manager):
         try:
             bdm = objects.BlockDeviceMapping.get_by_volume_id(
                     context, volume_id)
-            self._detach_volume(context, instance, bdm)
+            self._driver_detach_volume(context, instance, bdm)
             connector = self.driver.get_volume_connector(instance)
-            self.volume_api.terminate_connection(context, volume_id, connector)
+            connection_info = self._get_connection_info(bdm)
+            self._volume_api_terminate_connection(
+                context, connector, bdm, volume_id=volume_id,
+                connection_info=connection_info)
         except exception.NotFound:
             pass
 
@@ -5363,8 +5414,8 @@ class ComputeManager(manager.Manager):
             # remove the volume connection without detaching from hypervisor
             # because the instance is not running anymore on the current host
             if bdm.is_volume:
-                self.volume_api.terminate_connection(ctxt, bdm.volume_id,
-                                                     connector)
+                self._volume_api_terminate_connection(
+                    ctxt, connector, bdm, block_device_info=block_device_info)
 
         # Releasing vlan.
         # (not necessary in current implementation?)
@@ -5433,6 +5484,16 @@ class ComputeManager(manager.Manager):
             else:
                 self.consoleauth_rpcapi.delete_tokens_for_instance(ctxt,
                         instance.uuid)
+
+    def _volume_api_terminate_connection(self, context, connector, bdm,
+                                         volume_id=None, connection_info=None,
+                                         block_device_info=None):
+        volume_id = volume_id or bdm.volume_id
+        self.volume_api.terminate_connection(context, volume_id,
+                                             connector)
+        self.driver.post_connection_terminated(
+            bdm, connection_info=connection_info,
+            block_device_info=block_device_info)
 
     @object_compat
     @wrap_exception()
@@ -5789,6 +5850,9 @@ class ComputeManager(manager.Manager):
 
     @periodic_task.periodic_task(spacing=CONF.shelved_poll_interval)
     def _poll_shelved_instances(self, context):
+
+        if CONF.shelved_offload_time <= 0:
+            return
 
         filters = {'vm_state': vm_states.SHELVED,
                    'host': self.host}
@@ -6558,6 +6622,51 @@ class ComputeManager(manager.Manager):
                     instance.cleaned = True
                 with utils.temporary_mutation(context, read_deleted='yes'):
                     instance.save()
+
+    @periodic_task.periodic_task(spacing=CONF.instance_delete_interval)
+    def _cleanup_incomplete_migrations(self, context):
+        """Delete instance files on failed resize/revert-resize operation
+
+        During resize/revert-resize operation, if that instance gets deleted
+        in-between then instance files might remain either on source or
+        destination compute node because of race condition.
+        """
+        LOG.debug('Cleaning up deleted instances with incomplete migration ')
+        migration_filters = {'host': CONF.host,
+                             'status': 'error'}
+        migrations = objects.MigrationList.get_by_filters(context,
+                                                          migration_filters)
+
+        if not migrations:
+            return
+
+        inst_uuid_from_migrations = set([migration.instance_uuid for migration
+                                         in migrations])
+
+        inst_filters = {'deleted': True, 'soft_deleted': False,
+                        'uuid': inst_uuid_from_migrations}
+        attrs = ['info_cache', 'security_groups', 'system_metadata']
+        with utils.temporary_mutation(context, read_deleted='yes'):
+            instances = objects.InstanceList.get_by_filters(
+                context, inst_filters, expected_attrs=attrs, use_slave=True)
+
+        for instance in instances:
+            if instance.host != CONF.host:
+                for migration in migrations:
+                    if instance.uuid == migration.instance_uuid:
+                        # Delete instance files if not cleanup properly either
+                        # from the source or destination compute nodes when
+                        # the instance is deleted during resizing.
+                        self.driver.delete_instance_files(instance)
+                        try:
+                            migration.status = 'failed'
+                            with migration.obj_as_admin():
+                                migration.save()
+                        except exception.MigrationNotFound:
+                            LOG.warning(_LW("Migration %s is not found."),
+                                        migration.id, context=context,
+                                        instance=instance)
+                        break
 
     @messaging.expected_exceptions(exception.InstanceQuiesceNotSupported,
                                    exception.NovaException,

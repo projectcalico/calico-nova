@@ -20,9 +20,11 @@ import datetime
 import errno
 import glob
 import os
+import platform
 import random
 import re
 import shutil
+import signal
 import threading
 import time
 import uuid
@@ -823,12 +825,16 @@ class LibvirtConnTestCase(test.NoDBTestCase):
         self.assertRaises(exception.PciDeviceDetachFailed,
                           drvr._detach_pci_devices, FakeDomain(), pci_devices)
 
+    @mock.patch.object(platform, 'machine', mock.Mock(return_value='s390x'))
+    @mock.patch('sys.platform', 'linux2')
     def test_get_connector(self):
         initiator = 'fake.initiator.iqn'
         ip = 'fakeip'
         host = 'fakehost'
         wwpns = ['100010604b019419']
         wwnns = ['200010604b019419']
+        platform = 's390x'
+        os_type = 'linux2'
         self.flags(my_ip=ip)
         self.flags(host=host)
 
@@ -838,7 +844,9 @@ class LibvirtConnTestCase(test.NoDBTestCase):
             'initiator': initiator,
             'host': host,
             'wwpns': wwpns,
-            'wwnns': wwnns
+            'wwnns': wwnns,
+            'os_type': os_type,
+            'platform': platform
         }
         volume = {
             'id': 'fake'
@@ -6662,10 +6670,22 @@ class LibvirtConnTestCase(test.NoDBTestCase):
 
     def test_post_live_migration(self):
         vol = {'block_device_mapping': [
-                  {'connection_info': 'dummy1', 'mount_device': '/dev/sda'},
-                  {'connection_info': 'dummy2', 'mount_device': '/dev/sdb'}]}
+                  {'connection_info': {
+                       'data': {'multipath_id': 'dummy1'},
+                       'serial': 'fake_serial1'},
+                    'mount_device': '/dev/sda',
+                   },
+                  {'connection_info': {
+                       'data': {},
+                       'serial': 'fake_serial2'},
+                    'mount_device': '/dev/sdb', }]}
+
+        def fake_initialize_connection(context, volume_id, connector):
+            return {'data': {}}
+
         drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
 
+        fake_connector = {'host': 'fake'}
         inst_ref = {'id': 'foo'}
         cntx = context.get_admin_context()
 
@@ -6673,16 +6693,22 @@ class LibvirtConnTestCase(test.NoDBTestCase):
         with contextlib.nested(
             mock.patch.object(driver, 'block_device_info_get_mapping',
                               return_value=vol['block_device_mapping']),
+            mock.patch.object(drvr, "get_volume_connector",
+                              return_value=fake_connector),
+            mock.patch.object(drvr._volume_api, "initialize_connection",
+                              side_effect=fake_initialize_connection),
             mock.patch.object(drvr, '_disconnect_volume')
-        ) as (block_device_info_get_mapping, _disconnect_volume):
+        ) as (block_device_info_get_mapping, get_volume_connector,
+              initialize_connection, _disconnect_volume):
             drvr.post_live_migration(cntx, inst_ref, vol)
 
             block_device_info_get_mapping.assert_has_calls([
                 mock.call(vol)])
+            get_volume_connector.assert_has_calls([
+                mock.call(inst_ref)])
             _disconnect_volume.assert_has_calls([
-                mock.call(v['connection_info'],
-                          v['mount_device'].rpartition("/")[2])
-                for v in vol['block_device_mapping']])
+                mock.call({'data': {'multipath_id': 'dummy1'}}, 'sda'),
+                mock.call({'data': {}}, 'sdb')])
 
     def test_get_instance_disk_info_excludes_volumes(self):
         # Test data
@@ -9817,6 +9843,15 @@ Active:          8381604 kB
         self.mox.ReplayAll()
         self.assertTrue(drvr._is_storage_shared_with('foo', '/path'))
 
+    def test_store_pid_remove_pid(self):
+        instance = objects.Instance(**self.test_instance)
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        popen = mock.Mock(pid=3)
+        drvr.job_tracker.add_job(instance, popen.pid)
+        self.assertIn(3, drvr.job_tracker.jobs[instance.uuid])
+        drvr.job_tracker.remove_job(instance, popen.pid)
+        self.assertNotIn(instance.uuid, drvr.job_tracker.jobs)
+
     @mock.patch('nova.virt.libvirt.host.Host.get_domain')
     def test_get_domain_info_with_more_return(self, mock_get_domain):
         instance = objects.Instance(**self.test_instance)
@@ -11316,12 +11351,18 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         def fake_execute(*args, **kwargs):
             pass
 
+        def fake_copy_image(src, dest, host=None, receive=False,
+                            on_execute=None, on_completion=None):
+            self.assertIsNotNone(on_execute)
+            self.assertIsNotNone(on_completion)
+
         self.stubs.Set(self.drvr, 'get_instance_disk_info',
                        fake_get_instance_disk_info)
         self.stubs.Set(self.drvr, '_destroy', fake_destroy)
         self.stubs.Set(self.drvr, 'get_host_ip_addr',
                        fake_get_host_ip_addr)
         self.stubs.Set(utils, 'execute', fake_execute)
+        self.stubs.Set(libvirt_utils, 'copy_image', fake_copy_image)
 
         ins_ref = self._create_instance(params=params_for_instance)
 
@@ -12428,6 +12469,28 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
     @mock.patch('shutil.rmtree')
     @mock.patch('nova.utils.execute')
     @mock.patch('os.path.exists')
+    @mock.patch('os.kill')
+    @mock.patch('nova.virt.libvirt.utils.get_instance_path')
+    def test_delete_instance_files_kill_running(
+            self, get_instance_path, kill, exists, exe, shutil):
+        get_instance_path.return_value = '/path'
+        instance = objects.Instance(uuid='fake-uuid', id=1)
+        self.drvr.job_tracker.jobs[instance.uuid] = [3, 4]
+
+        exists.side_effect = [False, False, True, False]
+
+        result = self.drvr.delete_instance_files(instance)
+        get_instance_path.assert_called_with(instance)
+        exe.assert_called_with('mv', '/path', '/path_del')
+        kill.assert_has_calls([mock.call(3, signal.SIGKILL), mock.call(3, 0),
+                               mock.call(4, signal.SIGKILL), mock.call(4, 0)])
+        shutil.assert_called_with('/path_del')
+        self.assertTrue(result)
+        self.assertNotIn(instance.uuid, self.drvr.job_tracker.jobs)
+
+    @mock.patch('shutil.rmtree')
+    @mock.patch('nova.utils.execute')
+    @mock.patch('os.path.exists')
     @mock.patch('nova.virt.libvirt.utils.get_instance_path')
     def test_delete_instance_files_resize(self, get_instance_path, exists,
                                           exe, shutil):
@@ -12743,6 +12806,30 @@ class LibvirtDriverTestCase(test.NoDBTestCase):
         self.assertEqual(set([cpumodel.POLICY_REQUIRE,
                               cpumodel.POLICY_FORBID]),
                          set([f.policy for f in cpu.features]))
+
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._disconnect_volume')
+    def test_post_connection_terminated(self, mock_disconnect_volume):
+        connection_info = {'driver_volume_type': 'iscsi'}
+        fake_bdm = objects.BlockDeviceMapping()
+        fake_bdm.device_name = '/dev/vda/1'
+        drv = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        drv.post_connection_terminated(fake_bdm,
+                                       connection_info=connection_info)
+        mock_disconnect_volume.assert_called_with(connection_info, '1')
+
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._disconnect_volume')
+    @mock.patch('nova.virt.driver.block_device_info_get_mapping')
+    def test_post_connection_terminated_bdi(self, mock_mapping,
+                                            mock_disconnect_volume):
+        connection_info = {'driver_volume_type': 'iscsi'}
+        mock_mapping.return_value = [{'connection_info': connection_info,
+                                     'mount_device': '/dev/vda/1'}]
+        fake_bdm = objects.BlockDeviceMapping()
+        fake_bdm.device_name = '/dev/vda/1'
+        bdi = {'block_device_mapping': []}
+        drv = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        drv.post_connection_terminated(fake_bdm, block_device_info=bdi)
+        mock_disconnect_volume.assert_called_with(connection_info, '1')
 
 
 class LibvirtVolumeUsageTestCase(test.NoDBTestCase):

@@ -166,3 +166,12 @@ def set_vif_bandwidth_config(conf, inst_type):
         if len(scope) > 1 and scope[0] == 'quota':
             if scope[1] in bandwidth_items:
                 setattr(conf, scope[1], value)
+
+
+def set_vif_host_backend_hostdev_config(conf, devname):
+    """Populate a LibvirtConfigGuestInterface instance
+    with hostdev Interface.
+    """
+
+    conf.domain, conf.bus, conf.slot, conf.function = \
+    pci_utils.get_pci_address_fields(devname)

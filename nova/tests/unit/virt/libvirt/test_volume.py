@@ -342,6 +342,44 @@ Setting up iSCSI targets: unused
         out = driver._get_target_portals_from_iscsiadm_output(sample_input)
         self.assertEqual(out, targets)
 
+    def test_multipath_ll_parsing(self):
+        sample_output = """VOLUME01 dm-10 IET,VIRTUAL-DISK
+size=269G features='0' hwhandler='0' wp=rw
+|-+- policy='round-robin 0' prio=1 status=enabled
+| `- 1:0:0:1 sdb 8:32  active ready  running
+`-+- policy='round-robin 0' prio=1 status=enabled
+  `- 2:0:0:1 sdc 8:112 active ready  running
+mpath2 (VOLUME02) dm-441 IET,VIRTUAL-DISK
+size=10.0G features='0' hwhandler='0' wp=rw
+`-+- policy='round-robin 0' prio=1 status=active
+  |- 10:0:0:3 sdd 8:64 active ready  running
+  `- 11:0:0:1 sde 8:48 active ready running
+VOLUME03 dm-440 ,
+size=100.0G features='0' hwhandler='0' wp=rw
+`-+- policy='round-robin 0' prio=0 status=active
+  `- #:#:#:#  -   #:#  active faulty running"""
+
+        libvirt_driver = volume.LibvirtISCSIVolumeDriver("none")
+
+        with mock.patch.object(libvirt_driver,
+                               '_run_multipath') as mock_run_multipath:
+            mock_run_multipath.return_value = (sample_output,)
+            map = libvirt_driver._get_multipath_device_map()
+            self.assertEqual("/dev/mapper/VOLUME01", map["/dev/sdb"])
+            self.assertEqual("/dev/mapper/VOLUME01", map["/dev/sdc"])
+            self.assertEqual("/dev/mapper/mpath2", map["/dev/sdd"])
+            self.assertEqual("/dev/mapper/mpath2", map["/dev/sde"])
+            self.assertEqual(4, len(map))
+
+    def test_multipath_ll_parsing_none(self):
+        libvirt_driver = volume.LibvirtISCSIVolumeDriver("none")
+
+        with mock.patch.object(libvirt_driver,
+                               '_run_multipath') as mock_run_multipath:
+            mock_run_multipath.return_value = ("",)
+            map = libvirt_driver._get_multipath_device_map()
+            self.assertEqual(0, len(map))
+
     def test_libvirt_iscsi_get_host_device(self, transport=None):
         libvirt_driver = volume.LibvirtISCSIVolumeDriver(self.fake_conn)
         connection_info = self.iscsi_connection(self.vol, self.location,
@@ -471,11 +509,11 @@ Setting up iSCSI targets: unused
             mock.patch.object(libvirt_driver,
                               '_get_target_portals_from_iscsiadm_output',
                               return_value=[('fake-ip', 'fake-portal')]),
-            mock.patch.object(libvirt_driver, '_get_multipath_iqn',
-                              return_value='fake-portal'),
+            mock.patch.object(libvirt_driver, '_get_multipath_iqns',
+                              return_value=['fake-portal']),
         ) as (mock_exists, mock_devices, mock_rescan_multipath,
               mock_run_multipath, mock_device_name, mock_iscsi_devices,
-              mock_get_portals, mock_get_iqn):
+              mock_get_portals, mock_get_iqns):
             mock_run_multipath.side_effect = processutils.ProcessExecutionError
             vol = {'id': 1, 'name': self.name}
             connection_info = self.iscsi_connection(vol, self.location,
@@ -811,7 +849,7 @@ Setting up iSCSI targets: unused
         conf = libvirt_driver.get_config(connection_info, self.disk_info)
         tree = conf.format_dom()
         self.assertEqual(tree.find('./source').get('dev'), mpdev_filepath)
-        libvirt_driver._get_multipath_iqn = lambda x: self.iqn
+        libvirt_driver._get_multipath_iqns = lambda x: [self.iqn]
         libvirt_driver.disconnect_volume(connection_info, 'vde')
         expected_multipath_cmd = ('multipath', '-f', 'foo')
         self.assertIn(expected_multipath_cmd, self.executes)
@@ -882,7 +920,7 @@ Setting up iSCSI targets: unused
         connection_info = self.iscsi_connection(vol, location, iqn)
         connection_info['data']['device_path'] = mpdev_filepath
 
-        libvirt_driver._get_multipath_iqn = lambda x: iqn
+        libvirt_driver._get_multipath_iqns = lambda x: [iqn]
 
         iscsi_devs = ['1.2.3.4-iscsi-%s-lun-1' % iqn,
                       '%s-iscsi-%s-lun-1' % (location, iqn),
@@ -928,20 +966,14 @@ Setting up iSCSI targets: unused
             else:
                 return volumes[1]['mpdev_filepath']
 
-        def _get_multipath_iqn(mpdev):
-            if volumes[0]['mpdev_filepath'] == mpdev:
-                return volumes[0]['iqn']
-            else:
-                return volumes[1]['iqn']
-
         with contextlib.nested(
             mock.patch.object(os.path, 'exists', return_value=True),
             mock.patch.object(self.fake_conn, '_get_all_block_devices',
-                              retrun_value=[volumes[1]['mpdev_filepath']]),
+                              return_value=[volumes[1]['mpdev_filepath']]),
             mock.patch.object(libvirt_driver, '_get_multipath_device_name',
-                              _get_multipath_device_name),
-            mock.patch.object(libvirt_driver, '_get_multipath_iqn',
-                              _get_multipath_iqn),
+                              side_effect=_get_multipath_device_name),
+            mock.patch.object(libvirt_driver, '_get_multipath_iqns',
+                              return_value=[volumes[1]['iqn']]),
             mock.patch.object(libvirt_driver, '_get_iscsi_devices',
                               return_value=iscsi_devs),
             mock.patch.object(libvirt_driver,
@@ -951,7 +983,7 @@ Setting up iSCSI targets: unused
                                             [volumes[1]['location'],
                                              volumes[1]['iqn']]]),
             mock.patch.object(libvirt_driver, '_disconnect_mpath')
-        ) as (mock_exists, mock_devices, mock_device_name, mock_get_iqn,
+        ) as (mock_exists, mock_devices, mock_device_name, mock_get_iqns,
               mock_iscsi_devices, mock_get_portals, mock_disconnect_mpath):
             vol = {'id': 1, 'name': volumes[0]['name']}
             connection_info = self.iscsi_connection(vol,
@@ -966,6 +998,13 @@ Setting up iSCSI targets: unused
             ips_iqns.append([volumes[0]['location'], volumes[0]['iqn']])
             mock_disconnect_mpath.assert_called_once_with(
                 connection_info['data'], ips_iqns)
+            # Ensure that unnecessary multipath -ll calls aren't generated.
+            expected_calls = [mock.call("/dev/disk/by-path/" + iscsi_devs[0]),
+                              mock.call("/dev/disk/by-path/" + iscsi_devs[0]),
+                              mock.call("/dev/disk/by-path/" + iscsi_devs[1])]
+            mock_device_name.assert_has_calls(expected_calls)
+            mock_get_iqns.assert_called_once_with(
+                [volumes[1]['mpdev_filepath']])
 
     def test_libvirt_kvm_volume_with_multipath_getmpdev(self):
         self.flags(iscsi_use_multipath=True, group='libvirt')
@@ -982,6 +1021,7 @@ Setting up iSCSI targets: unused
                                                 self.iqn)
         mpdev_filepath = '/dev/mapper/foo'
         libvirt_driver._get_multipath_device_name = lambda x: mpdev_filepath
+        libvirt_driver._get_multipath_iqns = lambda x: [iqn0, self.iqn]
         self.stubs.Set(libvirt_driver,
                        '_get_target_portals_from_iscsiadm_output',
                        lambda x: [['fake_portal1', 'fake_iqn1']])
@@ -1024,7 +1064,7 @@ Setting up iSCSI targets: unused
         conf = libvirt_driver.get_config(connection_info, disk_info)
         tree = conf.format_dom()
         self.assertEqual(tree.find('./source').get('dev'), mpdev_filepath)
-        libvirt_driver._get_multipath_iqn = lambda x: iqn
+        libvirt_driver._get_multipath_iqns = lambda x: [iqn]
         libvirt_driver.disconnect_volume(connection_info, 'vde')
         expected_multipath_cmd = ('multipath', '-f', 'foo')
         self.assertIn(expected_multipath_cmd, self.executes)
@@ -1056,6 +1096,7 @@ Setting up iSCSI targets: unused
             "type": "disk",
             }
         libvirt_driver._get_multipath_device_name = lambda x: mpdev_filepath
+        libvirt_driver._get_multipath_iqns = lambda x: [iqn, iqn0]
         self.stubs.Set(libvirt_driver,
                        '_get_target_portals_from_iscsiadm_output',
                        lambda x: [['fake_portal1', 'fake_iqn1']])

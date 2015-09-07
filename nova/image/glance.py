@@ -548,6 +548,8 @@ def _extract_attributes(image, include_locations=False):
     include_locations_attrs = ['direct_url', 'locations']
     output = {}
 
+    output['properties'] = getattr(image, 'properties', {})
+
     for attr in IMAGE_ATTRIBUTES:
         if attr == 'deleted_at' and not output['deleted']:
             output[attr] = None
@@ -568,9 +570,10 @@ def _extract_attributes(image, include_locations=False):
             # will result in a additional lookup to glance for said attr.
             # Notable attributes that could have this issue:
             # disk_format, container_format, name, deleted, checksum
-            output[attr] = getattr(image, attr, None)
-
-    output['properties'] = getattr(image, 'properties', {})
+            # NOTE(snikitin): Some attrs can be stored in "property"
+            # dictionary. We need to move them to the "output" dictionary.
+            default = output['properties'].pop(attr, None)
+            output[attr] = getattr(image, attr, default)
 
     return output
 
