@@ -1,0 +1,129 @@
+# These templates have been reviewed by the debian-l10n-english
+# team
+#
+# If modifications/additions/rewording are needed, please ask
+# debian-l10n-english@lists.debian.org for advice.
+#
+# Even minor modifications require translation updates and such
+# changes should be coordinated with translators and reviewers.
+
+Template: nova/auth-host
+Type: string
+Default: 127.0.0.1
+_Description: Auth server hostname:
+ Please specify the URL of your Nova authentication server. Typically
+ this is also the URL of your OpenStack Identity Service (Keystone).
+
+Template: nova/admin-tenant-name
+Type: string
+Default: admin
+_Description: Auth server tenant name:
+
+Template: nova/admin-user
+Type: string
+Default: admin
+_Description: Auth server username:
+
+Template: nova/admin-password
+Type: password
+_Description: Auth server password:
+
+Template: nova/configure_db
+Type: boolean
+Default: false
+_Description: Set up a database for Nova?
+ No database has been set up for Nova to use. If you want
+ to set one up now, please make sure you have all needed
+ information:
+ .
+  * the host name of the database server (which must allow TCP
+    connections from this machine);
+  * a username and password to access the database;
+  * the type of database management software you want to use.
+ .
+ If you don't choose this option, no database will be set up and Nova
+ will use regular SQLite support.
+ .
+ You can change this setting later on by running "dpkg-reconfigure
+ -plow nova-common".
+
+Template: nova/active-api
+Type: multiselect
+Choices: ec2, osapi_compute, metadata
+_Description: API to activate:
+ Openstack Nova supports different API services, each of them binding on a
+ different port. Select which one nova-api should support.
+ .
+ If it is a compute node that you are setting-up, then you only need to run the
+ metadata API server. If you run Cinder, then you don't need osapi_volume (you
+ cannot run osapi_volume and cinder-api on the same server: they bind on the
+ same port).
+
+Template: nova/my-ip
+Type: string
+_Description: Value for my_ip:
+ This value will be stored in the my_ip directive of nova.conf.
+
+Template: nova/neutron_url
+Type: string
+Default: http://127.0.0.1:9696
+_Description: Neutron server URL:
+ Please enter the URL of the Neutron server.
+
+Template: nova/neutron_admin_tenant_name
+Type: string
+Default: admin
+_Description: Neutron admin tenant name:
+ Nova needs to be able to communicate with Neutron through Keystone. Therefore
+ Nova needs to know the Neutron admin tenant, username and password.
+ .
+ Please enter the name of the admin tenant for Neutron.
+
+Template: nova/neutron_admin_username
+Type: string
+Default: admin
+_Description: Neutron administrator username:
+ Please enter the username of the Neutron administrator.
+
+Template: nova/neutron_admin_password
+Type: password
+_Description: Neutron administrator password:
+ Please enter the password of the Neutron administrator.
+
+Template: nova/rabbit_host
+Type: string
+Default: localhost
+_Description: IP address of your RabbitMQ host:
+ In order to interoperate with other components of OpenStack, this package
+ needs to connect to a central RabbitMQ server.
+ .
+ Please specify the IP address of that server.
+
+Template: nova/rabbit_userid
+Type: string
+Default: guest
+_Description: Username for connection to the RabbitMQ server:
+ In order to interoperate with other components of OpenStack, this package
+ needs to connect to a central RabbitMQ server.
+ .
+ Please specify the username used to connect to the RabbitMQ server.
+
+Template: nova/rabbit_password
+Type: password
+_Description: Password for connection to the RabbitMQ server:
+ In order to interoperate with other components of OpenStack, this package
+ needs to connect to a central RabbitMQ server.
+ .
+ Please specify the password used to connect to the RabbitMQ server.
+
+Template: nova/metadata_secret
+Type: password
+_Description: Metadata proxy shared secret:
+ VM instances using Neutron to handle networking retrieve their metadata
+ through the Neutron metadata agent, which serves as a proxy to the Nova
+ metadata REST API server.
+ .
+ Please enter the password that should be used to protect communications
+ between the Neutron metadata proxy agent and the Nova metadata server. The
+ same shared password should be used when setting up the neutron-metadata-agent
+ package.

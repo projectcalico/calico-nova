@@ -1,0 +1,33 @@
+description "OpenStack Compute Spice HTML5 Proxy"
+author "Thomas Goirand <zigo@debian.org>"
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+chdir /var/run
+
+respawn
+respawn limit 20 5
+limit nofile 65535 65535
+
+pre-start script
+	for i in lock run log lib ; do
+		mkdir -p /var/$i/nova
+		chown nova /var/$i/nova
+	done
+end script
+
+script
+	[ -r /etc/default/nova-consoleproxy ] && . /etc/default/nova-consoleproxy || exit 0
+	[ "${NOVA_CONSOLE_PROXY_TYPE}" = "spicehtml5" ] || exit 0
+	[ -x "/usr/bin/nova-spicehtml5proxy" ] || exit 0
+	DAEMON_ARGS=" --config-file=/etc/nova/nova.conf"
+	[ -r /etc/default/openstack ] && . /etc/default/openstack
+	[ -r /etc/default/$UPSTART_JOB ] && . /etc/default/$UPSTART_JOB
+	[ "x$USE_SYSLOG" = "xyes" ] && DAEMON_ARGS="$DAEMON_ARGS --use-syslog"
+	[ "x$USE_LOGFILE" != "xno" ] && DAEMON_ARGS="$DAEMON_ARGS --log-file=/var/log/nova/nova-spicehtml5proxy.log"
+
+	exec start-stop-daemon --start --chdir /var/lib/nova \
+		--chuid nova:nova --make-pidfile --pidfile /var/run/nova/nova-spicehtml5proxy.pid \
+		--exec /usr/bin/nova-spicehtml5proxy -- --config-file=/etc/nova/nova.conf ${DAEMON_ARGS}
+end script

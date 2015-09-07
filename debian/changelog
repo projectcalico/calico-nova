@@ -1,0 +1,89 @@
+nova (1:2015.1.1-1~u14.04+mos19662) mos7.0; urgency=medium
+
+  [ mos-infra-ci ]
+  * e5b9214 Merge "Change auth_plugin for neutron_client" into
+    openstack-ci/fuel-7.0/2015.1.0
+
+  [ Timofey Durakov ]
+  * 263f3fa Change auth_plugin for neutron_client
+
+  [ mos-infra-ci ]
+  * 91aa4eb Merge "Fixed fail when user tries to delete images in resize
+    state" into openstack-ci/fuel-7.0/2015.1.0
+
+  [ Oleg Bondarev ]
+  * 250e71c Live Migration: add sleep on pre live migration at
+    destination
+
+  [ Sergey Nikitin ]
+  * 500a237 Fixed fail when user tries to delete images in resize state
+
+  [ Roman Podoliaka ]
+  * ccf158f Merge remote-tracking branch 'origin/stable/kilo' into
+    merge_stable_kilo
+
+  [ Jenkins ]
+  * d8bb068 Merge "Fix live-migrations usage of the wrong connector
+    information" into stable/kilo
+  * d2ec5f2 Merge "libvirt: Kill rsync/scp processes before deleting
+    instance" into stable/kilo
+
+  [ Anthony Lee ]
+  * 587092c Fix live-migrations usage of the wrong connector information
+
+  [ OpenStack Proposal Bot ]
+  * c1ad497 Updated from global requirements
+
+ -- mos-infra-ci <mos-infra-ci@review.fuel-infra.org>  Fri, 04 Sep 2015 19:07:45 +0000
+
+nova (1:2015.1.0-1~u14.04+mos5) mos7.0; urgency=medium
+
+  * Add /usr/share/nova/rootwrap directory creation in nova-common.dirs
+    (Closes: #1465460)
+
+ -- Igor Yozhikov <iyozhikov@mirantis.com>  Wed, 05 Aug 2015 13:39:02 +0300
+
+nova (1:2015.1.0-1~u14.04+mos4) mos7.0; urgency=medium
+
+  * Add nova.conf with default values
+    (Closes: #1469769)
+  * Disable interactive mode for nova-api config generator
+
+ -- Ivan Udovichenko <iudovichenko@mirantis.com>  Thu, 03 Jul 2015 18:22:02 +0300
+
+nova (1:2015.1.0-1~u14.04+mos3) mos7.0; urgency=medium
+
+  * Change default type of console proxy daemon from "spicehtml5" to "novnc"
+  * Add nova-objectstore package as it is required by upstream Nova
+    Puppet manifests at this moment.
+    This package is not presented in Debian source package [4] and will be
+    removed in future releases of Ubuntu due to its insecurity and
+    not horizontal scalability.
+  [1] http://anonscm.debian.org/cgit/openstack/nova.git/tree/debian/control?h=debian/kilo
+
+ -- Ivan Udovichenko <iudovichenko@mirantis.com>  Thu, 25 Jun 2015 14:32:37 +0300
+
+nova (1:2015.1.0-1~u14.04+mos2) mos7.0; urgency=medium
+
+  * Disable user interactive mode (fuel-library prerogative)
+  * Disable endpoint registration (fuel-library prerogative)
+
+ -- Ivan Udovichenko <iudovichenko@mirantis.com>  Thu, 28 May 2015  2:22:22 +0300
+
+nova (1:2015.1.0-1~u14.04+mos1) mos7.0; urgency=medium
+
+  * Downgrade python-libvirt to 1.2.2 [Trusty]
+  * Change package names for packages which are available in Debian but not in Ubuntu
+    (libvirt-daemon-system -> libvirt-bin, guestmount -> libguestfs-tools)
+  * Add required versions according to global-requirements.txt [1] for Kilo
+  * Remove version caps and add specific versions to packages which are needed
+  * Remove gbp.conf and "watch" files
+  * Add custom Upstart scripts for VNC services
+  * Add custom Upstart script for Nova Compute service
+  * Add python-ironic and python-ironicclient dependency to nova-compute-ironic package
+  * Used Debian source package [2] with last applied commit [3]
+  [1] https://github.com/openstack/requirements/blob/stable/kilo/global-requirements.txt
+  [2] http://anonscm.debian.org/cgit/openstack/nova.git/tree/debian/control?h=debian/kilo
+  [3] 5957929fa25d2e8be19f3fe5f812a52a1ca7b6c3
+
+ -- Ivan Udovichenko <iudovichenko@mirantis.com>  Mon, 27 Apr 2015 18:09:28 +0300

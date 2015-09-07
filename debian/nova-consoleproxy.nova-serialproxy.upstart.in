@@ -1,0 +1,31 @@
+description "OpenStack Compute serialproxy"
+author "Thomas Goirand <zigo@debian.org>"
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+chdir /var/run
+
+respawn
+respawn limit 20 5
+limit nofile 65535 65535
+
+pre-start script
+	for i in lock run log lib ; do
+		mkdir -p /var/$i/nova
+		chown nova /var/$i/nova
+	done
+end script
+
+script
+	[ -x "/usr/bin/nova-serialproxy" ] || exit 0
+	DAEMON_ARGS=" --config-file=/etc/nova/nova.conf"
+	[ -r /etc/default/openstack ] && . /etc/default/openstack
+	[ -r /etc/default/$UPSTART_JOB ] && . /etc/default/$UPSTART_JOB
+	[ "x$USE_SYSLOG" = "xyes" ] && DAEMON_ARGS="$DAEMON_ARGS --use-syslog"
+	[ "x$USE_LOGFILE" != "xno" ] && DAEMON_ARGS="$DAEMON_ARGS --log-file=/var/log/nova/nova-serialproxy.log"
+
+	exec start-stop-daemon --start --chdir /var/lib/nova \
+		--chuid nova:nova --make-pidfile --pidfile /var/run/nova/nova-serialproxy.pid \
+		--exec /usr/bin/nova-serialproxy -- --config-file=/etc/nova/nova.conf ${DAEMON_ARGS}
+end script

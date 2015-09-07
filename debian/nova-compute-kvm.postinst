@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -e
+
+if [ "$1" = "configure" ]; then
+	# libvirt-daemon package shipped with Ubuntu uses libvirtd group.
+	# libvirt-daemon backported from Debian Jessie uses libvirt.
+	if getent group libvirtd > /dev/null; then
+		adduser --quiet nova libvirtd
+	else
+		adduser --quiet nova libvirt
+	fi
+fi
+
+#DEBHELPER#
