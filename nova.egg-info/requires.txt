@@ -1,9 +1,8 @@
-pbr>=0.6,!=0.7,<1.0
 SQLAlchemy>=0.9.7,<=0.9.99
 boto>=2.32.1
 decorator>=3.4.0
 eventlet>=0.16.1,!=0.17.0
-Jinja2>=2.6
+Jinja2>=2.6  # BSD License3 clause
 keystonemiddleware>=1.5.0,<1.6.0
 lxml>=2.3
 Routes>=1.12.3,!=2.0
