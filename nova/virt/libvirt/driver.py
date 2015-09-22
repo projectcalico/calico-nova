@@ -263,7 +263,7 @@ DISABLE_PREFIX = 'AUTO: '
 DISABLE_REASON_UNDEFINED = None
 
 # Guest config console string
-CONSOLE = "console=tty0 console=ttyS0 console=ttyAMA0"
+CONSOLE = "console=tty0 console=ttyS0"
 
 GuestNumaConfig = collections.namedtuple(
     'GuestNumaConfig', ['cpuset', 'cputune', 'numaconfig', 'numatune'])

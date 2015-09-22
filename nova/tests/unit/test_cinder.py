@@ -115,21 +115,15 @@ class CinderTestCase(BaseCinderTestCase, test.NoDBTestCase):
                          self.create_client().client.endpoint_override)
 
     def test_get_non_existing_volume(self):
-        try:
-            self.requests.get(self.URL + '/volumes/nonexisting',
-                              status_code=404)
-        except:
-            self.skipTest('Failed to connect')
+        self.requests.get(self.URL + '/volumes/nonexisting',
+                          status_code=404)
 
         self.assertRaises(exception.VolumeNotFound, self.api.get, self.context,
                           'nonexisting')
 
     def test_volume_with_image_metadata(self):
         v = self.stub_volume(id='1234', volume_image_metadata=_image_metadata)
-        try:
-            m = self.requests.get(self.URL + '/volumes/5678', json={'volume': v})
-        except:
-            self.skipTest('Skipped by Ubuntu')
+        m = self.requests.get(self.URL + '/volumes/5678', json={'volume': v})
 
         volume = self.api.get(self.context, '5678')
         self.assertThat(m.last_request.path,
@@ -181,28 +175,19 @@ class CinderV2TestCase(BaseCinderTestCase, test.NoDBTestCase):
     def test_cinder_endpoint_template(self):
         endpoint = 'http://other_host:8776/v2/%(project_id)s'
         self.flags(endpoint_template=endpoint, group='cinder')
-        try:
-            self.assertEqual('http://other_host:8776/v2/project_id',
-                             self.create_client().client.endpoint_override)
-        except:
-            self.skipTest('Skipped by Ubuntu')
+        self.assertEqual('http://other_host:8776/v2/project_id',
+                         self.create_client().client.endpoint_override)
 
     def test_get_non_existing_volume(self):
-        try:
-            self.requests.get(self.URL + '/volumes/nonexisting',
-                              status_code=404)
-        except:
-            self.skipTest('Skipped by Ubuntu')
+        self.requests.get(self.URL + '/volumes/nonexisting',
+                          status_code=404)
 
         self.assertRaises(exception.VolumeNotFound, self.api.get, self.context,
                           'nonexisting')
 
     def test_volume_with_image_metadata(self):
         v = self.stub_volume(id='1234', volume_image_metadata=_image_metadata)
-        try:
-            self.requests.get(self.URL + '/volumes/5678', json={'volume': v})
-        except:
-            self.skipTest('Environment not setup')
+        self.requests.get(self.URL + '/volumes/5678', json={'volume': v})
         volume = self.api.get(self.context, '5678')
         self.assertIn('volume_image_metadata', volume)
         self.assertEqual(_image_metadata, volume['volume_image_metadata'])

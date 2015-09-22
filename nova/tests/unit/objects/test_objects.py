@@ -514,11 +514,8 @@ class _TestObject(object):
         class Foo(base.NovaObject):
             fields = {'foobar': fields.Field(fields.Integer())}
         obj = Foo()
-        try:
-            with self.assertRaisesRegex(NotImplementedError, ".*foobar.*"):
-                obj.foobar
-        except:
-            self.skipTest('Skipped by Ubuntu')
+        with self.assertRaisesRegex(NotImplementedError, ".*foobar.*"):
+            obj.foobar
 
     def test_loaded_in_primitive(self):
         obj = MyObj(foo=1)
