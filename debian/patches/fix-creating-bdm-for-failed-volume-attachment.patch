@@ -1,0 +1,364 @@
+From f2061f0b6e94cf364ff565366ab71dfcc68cd2ef Mon Sep 17 00:00:00 2001
+From: git-harry <git-harry@live.co.uk>
+Date: Mon, 4 Aug 2014 15:17:29 +0100
+Subject: [PATCH] Fix creating bdm for failed volume attachment
+
+This commit modifies the reserve_block_device_name method to return the
+bdm object, when the corresponding keyword argument is True. This
+ensures the correct bdm is destroyed if the attach fails. Currently the
+code assumes only one bdm per volume and so retrieving it can cause the
+incorrect db entry to be returned.
+
+Closes-Bug: #1349888
+(cherry picked from commit 339a97d0f2d17f531cfc79e09cd8b8bc75ce6e2a)
+
+Conflicts:
+	nova/compute/api.py
+	nova/compute/manager.py
+	nova/compute/rpcapi.py
+	nova/tests/compute/test_compute.py
+	nova/tests/compute/test_rpcapi.py
+	nova/tests/integrated/v3/test_extended_volumes.py
+
+Change-Id: I22a6db76d2044331d1a846eb4b6d7338c50270e2
+---
+ nova/compute/api.py                               | 10 ++---
+ nova/compute/manager.py                           | 10 +++--
+ nova/compute/rpcapi.py                            | 45 +++++++++++++++++------
+ nova/tests/compute/test_compute.py                | 35 +++++++++---------
+ nova/tests/compute/test_rpcapi.py                 | 20 +++++-----
+ nova/tests/integrated/test_api_samples.py         |  6 ++-
+ nova/tests/integrated/v3/test_extended_volumes.py |  8 ++--
+ 7 files changed, 80 insertions(+), 54 deletions(-)
+
+diff --git a/nova/compute/api.py b/nova/compute/api.py
+index fd15df6..5605728 100644
+--- a/nova/compute/api.py
++++ b/nova/compute/api.py
+@@ -2786,11 +2786,9 @@ class API(base.Base):
+         #             the same time. When db access is removed from
+         #             compute, the bdm will be created here and we will
+         #             have to make sure that they are assigned atomically.
+-        device = self.compute_rpcapi.reserve_block_device_name(
+-            context, device=device, instance=instance, volume_id=volume_id,
+-            disk_bus=disk_bus, device_type=device_type)
+-        volume_bdm = block_device_obj.BlockDeviceMapping.get_by_volume_id(
+-            context, volume_id)
++        volume_bdm = self.compute_rpcapi.reserve_block_device_name(
++            context, instance, device, volume_id, disk_bus=disk_bus,
++            device_type=device_type)
+         try:
+             volume = self.volume_api.get(context, volume_id)
+             self.volume_api.check_attach(context, volume, instance=instance)
+@@ -2801,7 +2799,7 @@ class API(base.Base):
+             with excutils.save_and_reraise_exception():
+                 volume_bdm.destroy(context)
+ 
+-        return device
++        return volume_bdm.device_name
+ 
+     @wrap_check_policy
+     @check_instance_lock
+diff --git a/nova/compute/manager.py b/nova/compute/manager.py
+index 6c49a64..aace5c2 100644
+--- a/nova/compute/manager.py
++++ b/nova/compute/manager.py
+@@ -586,7 +586,7 @@ class ComputeVirtAPI(virtapi.VirtAPI):
+ class ComputeManager(manager.Manager):
+     """Manages the running instances from creation to destruction."""
+ 
+-    target = messaging.Target(version='3.23')
++    target = messaging.Target(version='3.35')
+ 
+     # How long to wait in seconds before re-issuing a shutdown
+     # signal to a instance during power off.  The overall
+@@ -4226,7 +4226,8 @@ class ComputeManager(manager.Manager):
+     @reverts_task_state
+     @wrap_instance_fault
+     def reserve_block_device_name(self, context, instance, device,
+-                                  volume_id, disk_bus=None, device_type=None):
++                                  volume_id, disk_bus=None, device_type=None,
++                                  return_bdm_object=False):
+         # NOTE(ndipanov): disk_bus and device_type will be set to None if not
+         # passed (by older clients) and defaulted by the virt driver. Remove
+         # default values on the next major RPC version bump.
+@@ -4249,7 +4250,10 @@ class ComputeManager(manager.Manager):
+                     disk_bus=disk_bus, device_type=device_type)
+             bdm.create(context)
+ 
+-            return device_name
++            if return_bdm_object:
++                return bdm
++            else:
++                return device_name
+ 
+         return do_reserve()
+ 
+diff --git a/nova/compute/rpcapi.py b/nova/compute/rpcapi.py
+index a1adfbf..2e39fd9 100644
+--- a/nova/compute/rpcapi.py
++++ b/nova/compute/rpcapi.py
+@@ -22,6 +22,7 @@ from oslo import messaging
+ from nova import block_device
+ from nova import exception
+ from nova.objects import base as objects_base
++from nova.objects import block_device as block_device_obj
+ from nova.openstack.common.gettextutils import _
+ from nova.openstack.common import jsonutils
+ from nova import rpc
+@@ -241,6 +242,28 @@ class ComputeAPI(object):
+         3.21 - Made rebuild take new-world BDM objects
+         3.22 - Made terminate_instance take new-world BDM objects
+         3.23 - Added external_instance_event()
++            build_and_run_instance was added in Havana and not used or
++            documented.
++
++        ... Icehouse supports message version 3.23.  So, any changes to
++        existing methods in 3.x after that point should be done such that they
++        can handle the version_cap being set to 3.23.
++
++        3.24 - Update rescue_instance() to take optional rescue_image_ref
++        3.25 - Make detach_volume take an object
++        3.26 - Make live_migration() and
++        rollback_live_migration_at_destination() take an object
++        ... Removed run_instance()
++        3.27 - Make run_instance() accept a new-world object
++        3.28 - Update get_console_output() to accept a new-world object
++        3.29 - Make check_instance_shared_storage accept a new-world object
++        3.30 - Make remove_volume_connection() accept a new-world object
++        3.31 - Add get_instance_diagnostics
++        3.32 - Add destroy_disks and migrate_data optional parameters to
++               rollback_live_migration_at_destination()
++        3.33 - Make build_and_run_instance() take a NetworkRequestList object
++        3.34 - Add get_serial_console method
++        3.35 - Make reserve_block_device_name return a BDM object
+     '''
+ 
+     VERSION_ALIASES = {
+@@ -795,22 +818,22 @@ class ComputeAPI(object):
+ 
+     def reserve_block_device_name(self, ctxt, instance, device, volume_id,
+                                   disk_bus=None, device_type=None):
+-        version = '3.16'
+         kw = {'instance': instance, 'device': device,
+               'volume_id': volume_id, 'disk_bus': disk_bus,
+-              'device_type': device_type}
+-
+-        if not self.client.can_send_version(version):
+-            # NOTE(russellb) Havana compat
+-            version = self._get_compat_version('3.0', '2.3')
+-            kw['instance'] = jsonutils.to_primitive(
+-                    objects_base.obj_to_primitive(instance))
+-            del kw['disk_bus']
+-            del kw['device_type']
++              'device_type': device_type, 'return_bdm_object': True}
++        if self.client.can_send_version('3.35'):
++            version = '3.35'
++        else:
++            del kw['return_bdm_object']
++            version = '3.16'
+ 
+         cctxt = self.client.prepare(server=_compute_host(None, instance),
+                 version=version)
+-        return cctxt.call(ctxt, 'reserve_block_device_name', **kw)
++        volume_bdm = cctxt.call(ctxt, 'reserve_block_device_name', **kw)
++        if not isinstance(volume_bdm, block_device_obj.BlockDeviceMapping):
++            volume_bdm = block_device_obj.BlockDeviceMapping.get_by_volume_id(
++                ctxt, volume_id)
++        return volume_bdm
+ 
+     def backup_instance(self, ctxt, instance, image_id, backup_type,
+                         rotation):
+diff --git a/nova/tests/compute/test_compute.py b/nova/tests/compute/test_compute.py
+index 9fd2603..1642fc5 100644
+--- a/nova/tests/compute/test_compute.py
++++ b/nova/tests/compute/test_compute.py
+@@ -1731,7 +1731,8 @@ class ComputeTestCase(BaseTestCase):
+ 
+         bdms = []
+ 
+-        def fake_rpc_reserve_block_device_name(self, context, **kwargs):
++        def fake_rpc_reserve_block_device_name(self, context, instance, device,
++                                               volume_id, **kwargs):
+             bdm = block_device_obj.BlockDeviceMapping(
+                         **{'source_type': 'volume',
+                            'destination_type': 'volume',
+@@ -1740,6 +1741,7 @@ class ComputeTestCase(BaseTestCase):
+                            'device_name': '/dev/vdc'})
+             bdm.create(context)
+             bdms.append(bdm)
++            return bdm
+ 
+         self.stubs.Set(cinder.API, 'get', fake_volume_get)
+         self.stubs.Set(cinder.API, 'check_attach', fake_check_attach)
+@@ -8760,6 +8762,10 @@ class ComputeAPITestCase(BaseTestCase):
+         fake_bdm = fake_block_device.FakeDbBlockDeviceDict(
+                 {'source_type': 'volume', 'destination_type': 'volume',
+                  'volume_id': 'fake-volume-id', 'device_name': '/dev/vdb'})
++        bdm = block_device_obj.BlockDeviceMapping()._from_db_object(
++                self.context,
++                block_device_obj.BlockDeviceMapping(),
++                fake_bdm)
+         instance = self._create_fake_instance()
+         fake_volume = {'id': 'fake-volume-id'}
+ 
+@@ -8768,23 +8774,18 @@ class ComputeAPITestCase(BaseTestCase):
+             mock.patch.object(cinder.API, 'check_attach'),
+             mock.patch.object(cinder.API, 'reserve_volume'),
+             mock.patch.object(compute_rpcapi.ComputeAPI,
+-                'reserve_block_device_name', return_value='/dev/vdb'),
+-            mock.patch.object(db, 'block_device_mapping_get_by_volume_id',
+-                return_value=fake_bdm),
++                'reserve_block_device_name', return_value=bdm),
+             mock.patch.object(compute_rpcapi.ComputeAPI, 'attach_volume')
+         ) as (mock_get, mock_check_attach, mock_reserve_vol, mock_reserve_bdm,
+-                mock_bdm_get, mock_attach):
++                mock_attach):
+ 
+             self.compute_api.attach_volume(
+                     self.context, instance, 'fake-volume-id',
+                     '/dev/vdb', 'ide', 'cdrom')
+ 
+             mock_reserve_bdm.assert_called_once_with(
+-                    self.context, device='/dev/vdb', instance=instance,
+-                    volume_id='fake-volume-id', disk_bus='ide',
+-                    device_type='cdrom')
+-            mock_bdm_get.assert_called_once_with(
+-                    self.context, 'fake-volume-id', [])
++                    self.context, instance, '/dev/vdb', 'fake-volume-id',
++                    disk_bus='ide', device_type='cdrom')
+             self.assertEqual(mock_get.call_args,
+                              mock.call(self.context, 'fake-volume-id'))
+             self.assertEqual(mock_check_attach.call_args,
+@@ -8815,8 +8816,12 @@ class ComputeAPITestCase(BaseTestCase):
+         def fake_rpc_attach_volume(self, context, **kwargs):
+             called['fake_rpc_attach_volume'] = True
+ 
+-        def fake_rpc_reserve_block_device_name(self, context, **kwargs):
++        def fake_rpc_reserve_block_device_name(self, context, instance, device,
++                                               volume_id, **kwargs):
+             called['fake_rpc_reserve_block_device_name'] = True
++            bdm = block_device_obj.BlockDeviceMapping()
++            bdm['device_name'] = '/dev/vdb'
++            return bdm
+ 
+         self.stubs.Set(cinder.API, 'get', fake_volume_get)
+         self.stubs.Set(cinder.API, 'check_attach', fake_check_attach)
+@@ -8828,17 +8833,11 @@ class ComputeAPITestCase(BaseTestCase):
+         self.stubs.Set(compute_rpcapi.ComputeAPI, 'attach_volume',
+                        fake_rpc_attach_volume)
+ 
+-        self.mox.StubOutWithMock(block_device_obj.BlockDeviceMapping,
+-                                 'get_by_volume_id')
+-        block_device_obj.BlockDeviceMapping.get_by_volume_id(
+-                self.context, mox.IgnoreArg()).AndReturn('fake-bdm')
+-        self.mox.ReplayAll()
+-
+         instance = self._create_fake_instance()
+         self.compute_api.attach_volume(self.context, instance, 1, device=None)
+         self.assertTrue(called.get('fake_check_attach'))
+         self.assertTrue(called.get('fake_reserve_volume'))
+-        self.assertTrue(called.get('fake_reserve_volume'))
++        self.assertTrue(called.get('fake_volume_get'))
+         self.assertTrue(called.get('fake_rpc_reserve_block_device_name'))
+         self.assertTrue(called.get('fake_rpc_attach_volume'))
+ 
+diff --git a/nova/tests/compute/test_rpcapi.py b/nova/tests/compute/test_rpcapi.py
+index d4026ea..1a2b9f5 100644
+--- a/nova/tests/compute/test_rpcapi.py
++++ b/nova/tests/compute/test_rpcapi.py
+@@ -24,6 +24,7 @@ from oslo.config import cfg
+ from nova.compute import rpcapi as compute_rpcapi
+ from nova import context
+ from nova import db
++from nova.objects import block_device as objects_block_dev
+ from nova.openstack.common import jsonutils
+ from nova import test
+ from nova.tests import fake_block_device
+@@ -88,7 +89,13 @@ class ComputeRpcAPITestCase(test.TestCase):
+             rpc_mock, prepare_mock, csv_mock
+         ):
+             prepare_mock.return_value = rpcapi.client
+-            rpc_mock.return_value = 'foo' if rpc_method == 'call' else None
++            if 'return_bdm_object' in kwargs:
++                del kwargs['return_bdm_object']
++                rpc_mock.return_value = objects_block_dev.BlockDeviceMapping()
++            elif rpc_method == 'call':
++                rpc_mock.return_value = 'foo'
++            else:
++                rpc_mock.return_value = None
+             csv_mock.side_effect = (
+                 lambda v: orig_prepare(version=v).can_send_version())
+ 
+@@ -495,14 +502,9 @@ class ComputeRpcAPITestCase(test.TestCase):
+ 
+     def test_reserve_block_device_name(self):
+         self._test_compute_api('reserve_block_device_name', 'call',
+-                instance=self.fake_instance, device='device', volume_id='id',
+-                disk_bus='ide', device_type='cdrom', version='3.16')
+-
+-        # NOTE(russellb) Havana compat
+-        self.flags(compute='havana', group='upgrade_levels')
+-        self._test_compute_api('reserve_block_device_name', 'call',
+-                instance=self.fake_instance, device='device', volume_id='id',
+-                version='2.3')
++                instance=self.fake_instance, device='device',
++                volume_id='id', disk_bus='ide', device_type='cdrom',
++                version='3.35', return_bdm_object=True)
+ 
+     def refresh_provider_fw_rules(self):
+         self._test_compute_api('refresh_provider_fw_rules', 'cast',
+diff --git a/nova/tests/integrated/test_api_samples.py b/nova/tests/integrated/test_api_samples.py
+index 3098aff..b2eb41b 100644
+--- a/nova/tests/integrated/test_api_samples.py
++++ b/nova/tests/integrated/test_api_samples.py
+@@ -3855,13 +3855,15 @@ class VolumeAttachmentsSampleJsonTest(VolumeAttachmentsSampleBase):
+     extension_name = ("nova.api.openstack.compute.contrib.volumes.Volumes")
+ 
+     def test_attach_volume_to_server(self):
+-        device_name = '/dev/vdd'
+         self.stubs.Set(cinder.API, 'get', fakes.stub_volume_get)
+         self.stubs.Set(cinder.API, 'check_attach', lambda *a, **k: None)
+         self.stubs.Set(cinder.API, 'reserve_volume', lambda *a, **k: None)
++        device_name = '/dev/vdd'
++        bdm = block_device_obj.BlockDeviceMapping()
++        bdm['device_name'] = device_name
+         self.stubs.Set(compute_manager.ComputeManager,
+                        "reserve_block_device_name",
+-                       lambda *a, **k: device_name)
++                       lambda *a, **k: bdm)
+         self.stubs.Set(compute_manager.ComputeManager,
+                        'attach_volume',
+                        lambda *a, **k: None)
+diff --git a/nova/tests/integrated/v3/test_extended_volumes.py b/nova/tests/integrated/v3/test_extended_volumes.py
+index 22e0479..9f24208 100644
+--- a/nova/tests/integrated/v3/test_extended_volumes.py
++++ b/nova/tests/integrated/v3/test_extended_volumes.py
+@@ -78,20 +78,18 @@ class ExtendedVolumesSampleJsonTests(test_servers.ServersSampleBase):
+         self._verify_response('servers-detail-resp', subs, response, 200)
+ 
+     def test_attach_volume(self):
++        bdm = block_device_obj.BlockDeviceMapping()
+         device_name = '/dev/vdd'
+-        disk_bus = 'ide'
+-        device_type = 'cdrom'
++        bdm['device_name'] = device_name
+         self.stubs.Set(cinder.API, 'get', fakes.stub_volume_get)
+         self.stubs.Set(cinder.API, 'check_attach', lambda *a, **k: None)
+         self.stubs.Set(cinder.API, 'reserve_volume', lambda *a, **k: None)
+         self.stubs.Set(compute_manager.ComputeManager,
+                        "reserve_block_device_name",
+-                       lambda *a, **k: device_name)
++                       lambda *a, **k: bdm)
+         self.stubs.Set(compute_manager.ComputeManager,
+                        'attach_volume',
+                        lambda *a, **k: None)
+-        self.stubs.Set(block_device_obj.BlockDeviceMapping, 'get_by_volume_id',
+-                       classmethod(lambda *a, **k: None))
+ 
+         volume = fakes.stub_volume_get(None, context.get_admin_context(),
+                                        'a26887c6-c47b-4654-abb5-dfadf7d3f803')
+-- 
+1.9.1
+
+
