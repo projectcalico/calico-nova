@@ -1,3 +1,11 @@
+nova (1:2014.1.5-0ubuntu1.3) trusty; urgency=medium
+
+  * Attempting to attach the same volume multiple times can cause
+    bdm record for existing attachment to be deleted. (LP: #1349888)
+    - d/p/fix-creating-bdm-for-failed-volume-attachment.patch
+
+ -- Edward Hope-Morley <edward.hope-morley@canonical.com>  Tue, 08 Sep 2015 12:32:45 +0100
+
 nova (1:2014.1.5-0ubuntu1.2) trusty; urgency=medium
 
   * Add rsyslog retry support (LP: #1459046)
