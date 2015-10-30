@@ -1,3 +1,10 @@
+nova (1:2015.1.1-1~u14.04+mos19662.1) UNRELEASED; urgency=medium
+
+  * Non-maintainer upload.
+  * Bump version number for calico patches
+
+ -- ubuntu <ubuntu@calico-jenkins-2>  Fri, 30 Oct 2015 13:29:16 +0000
+
 nova (1:2015.1.1-1~u14.04+mos19662) mos7.0; urgency=medium
 
   [ mos-infra-ci ]
