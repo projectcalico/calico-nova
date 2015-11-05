@@ -1,11 +1,18 @@
-nova (1:2014.1.5-0ubuntu1.3calico1.0.0+1) trusty; urgency=medium
+nova (1:2014.1.5-0ubuntu1.4calico1.0.0+1) trusty; urgency=medium
 
   * Re-release with Calico patch after merging new Ubuntu release.
   * Implement new 'ROUTED' interface type
   * Change from VIF_TYPE_ROUTED to VIF_TYPE_TAP
   * Use statically allocated MAC address for all ifs.
 
- -- Cory Benfield <cory@projectcalico.org>  Wed, 19 Aug 2015 07:17:56 +0100
+ -- Neil Jerram <Neil.Jerram@metaswitch.com>  Thu, 05 Nov 2015 15:11:00 +0000
+
+nova (1:2014.1.5-0ubuntu1.4) trusty; urgency=medium
+
+  * Protect against possible rpcapi mismatch on upgrade (LP: #1506257)
+    - d/p/protect-against-upgrade-rpc-ver-mismatch.patch
+
+ -- Edward Hope-Morley <edward.hope-morley@canonical.com>  Thu, 22 Oct 2015 10:00:29 -0500
 
 nova (1:2014.1.5-0ubuntu1.3) trusty; urgency=medium
 
@@ -2128,4 +2135,3 @@ nova (0.9.1~bzr204-0ubuntu1) maverick; urgency=low
   * First OpenStack release.
 
  -- Soren Hansen <soren@ubuntu.com>  Wed, 04 Aug 2010 13:27:50 +0200
-

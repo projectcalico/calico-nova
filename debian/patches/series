@@ -7,4 +7,5 @@ update-run-tests.patch
 add-support-for-syslog-connect-retries.patch
 clean-shutdown.patch
 fix-creating-bdm-for-failed-volume-attachment.patch
+protect-against-upgrade-rpc-ver-mismatch.patch
 calico.patch
