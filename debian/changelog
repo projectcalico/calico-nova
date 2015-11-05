@@ -1,3 +1,10 @@
+nova (1:2014.1.5-0ubuntu1.4) trusty; urgency=medium
+
+  * Protect against possible rpcapi mismatch on upgrade (LP: #1506257)
+    - d/p/protect-against-upgrade-rpc-ver-mismatch.patch
+
+ -- Edward Hope-Morley <edward.hope-morley@canonical.com>  Thu, 22 Oct 2015 10:00:29 -0500
+
 nova (1:2014.1.5-0ubuntu1.3) trusty; urgency=medium
 
   * Attempting to attach the same volume multiple times can cause

@@ -1,0 +1,46 @@
+diff --git a/nova/compute/rpcapi.py b/nova/compute/rpcapi.py
+index 2e39fd9..0b4eabe 100644
+--- a/nova/compute/rpcapi.py
++++ b/nova/compute/rpcapi.py
+@@ -816,6 +816,25 @@ class ComputeAPI(object):
+         cctxt = self.client.prepare(server=host, version=version)
+         return cctxt.call(ctxt, 'get_host_uptime')
+ 
++    def _reserve_block_device_name(self, ctxt, instance, device, volume_id,
++                                   disk_bus=None, device_type=None):
++        version = '3.16'
++        kw = {'instance': instance, 'device': device,
++              'volume_id': volume_id, 'disk_bus': disk_bus,
++              'device_type': device_type}
++
++        if not self.client.can_send_version(version):
++            # NOTE(russellb) Havana compat
++            version = self._get_compat_version('3.0', '2.3')
++            kw['instance'] = jsonutils.to_primitive(
++                    objects_base.obj_to_primitive(instance))
++            del kw['disk_bus']
++            del kw['device_type']
++
++        cctxt = self.client.prepare(server=_compute_host(None, instance),
++                version=version)
++        return cctxt.call(ctxt, 'reserve_block_device_name', **kw)
++
+     def reserve_block_device_name(self, ctxt, instance, device, volume_id,
+                                   disk_bus=None, device_type=None):
+         kw = {'instance': instance, 'device': device,
+@@ -829,7 +848,14 @@ class ComputeAPI(object):
+ 
+         cctxt = self.client.prepare(server=_compute_host(None, instance),
+                 version=version)
+-        volume_bdm = cctxt.call(ctxt, 'reserve_block_device_name', **kw)
++        try:
++            volume_bdm = cctxt.call(ctxt, 'reserve_block_device_name', **kw)
++        except messaging.rpc.client.RemoteError:
++            # NOTE(dosaboy): catch rpc api version mismatch (see bug 1506257)
++            volume_bdm = self._reserve_block_device_name(ctxt, instance,
++                                                         device, volume_id,
++                                                         disk_bus, device_type)
++
+         if not isinstance(volume_bdm, block_device_obj.BlockDeviceMapping):
+             volume_bdm = block_device_obj.BlockDeviceMapping.get_by_volume_id(
+                 ctxt, volume_id)
