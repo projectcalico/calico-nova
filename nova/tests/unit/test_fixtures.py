@@ -152,7 +152,6 @@ class TestTimeout(testtools.TestCase):
 
 class TestOSAPIFixture(testtools.TestCase):
     def test_responds_to_version(self):
-        self.skipTest("Disabled on Ubuntu due to failure in LP buildd")
         """Ensure the OSAPI server responds to calls sensibly."""
         self.useFixture(fixtures.OutputStreamCapture())
         self.useFixture(fixtures.StandardLogging())
