@@ -1,14 +1,20 @@
-nova (1:2015.1.2-0ubuntu1~cloud0calico1.0.0+1) trusty; urgency=medium
+nova (1:2015.1.2-0ubuntu2~cloud0calico1.0.0+1) trusty; urgency=medium
 
   * Rebase Calico patches on top of new upstream Kilo release
 
  -- Matt Dupre <matt@projectcalico.org>  Thu, 26 Nov 2015 13:58:20 +0000
 
-nova (1:2015.1.2-0ubuntu1~cloud0) trusty-kilo; urgency=medium
+nova (1:2015.1.2-0ubuntu2~cloud0) trusty-kilo; urgency=medium
 
-  * New upstream release for the Ubuntu Cloud Archive.
+  * New update for the Ubuntu Cloud Archive.
 
- -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Thu, 22 Oct 2015 07:13:12 +0000
+ -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Mon, 23 Nov 2015 10:39:58 +0000
+
+nova (1:2015.1.2-0ubuntu2) vivid; urgency=medium
+
+  * d/control: Bump oslo.concurrency to >= 1.8.2 (LP: #1518016).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Fri, 20 Nov 2015 07:56:47 -0500
 
 nova (1:2015.1.2-0ubuntu1) vivid; urgency=medium
 
