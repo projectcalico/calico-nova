@@ -1,8 +1,14 @@
-nova (1:2015.1.2-0ubuntu1~cloud0) trusty-kilo; urgency=medium
+nova (1:2015.1.2-0ubuntu2~cloud0) trusty-kilo; urgency=medium
 
-  * New upstream release for the Ubuntu Cloud Archive.
+  * New update for the Ubuntu Cloud Archive.
 
- -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Thu, 22 Oct 2015 07:13:12 +0000
+ -- Openstack Ubuntu Testing Bot <openstack-testing-bot@ubuntu.com>  Mon, 23 Nov 2015 10:39:58 +0000
+
+nova (1:2015.1.2-0ubuntu2) vivid; urgency=medium
+
+  * d/control: Bump oslo.concurrency to >= 1.8.2 (LP: #1518016).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Fri, 20 Nov 2015 07:56:47 -0500
 
 nova (1:2015.1.2-0ubuntu1) vivid; urgency=medium
 
