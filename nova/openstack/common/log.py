@@ -35,7 +35,6 @@ import logging.handlers
 import os
 import socket
 import sys
-import time
 import traceback
 
 from oslo.config import cfg
@@ -104,10 +103,6 @@ logging_cli_opts = [
                 help='Use syslog for logging. '
                      'Existing syslog format is DEPRECATED during I, '
                      'and will change in J to honor RFC5424.'),
-    cfg.IntOpt('syslog-connect-retries',
-               default=3,
-               help='Number of attempts with a five second interval to retry '
-                    'connecting to syslog. (if use-syslog=True)'),
     cfg.BoolOpt('use-syslog-rfc-format',
                 # TODO(bogdando) remove or use True after existing
                 #    syslog format deprecation in J
@@ -549,43 +544,21 @@ def _setup_logging_from_conf(project, version):
             logger.setLevel(level_name)
 
     if CONF.use_syslog:
-        retries = CONF.syslog_connect_retries
-        syslog_ready = False
-        while True:
-            try:
-                facility = _find_facility_from_conf()
-                # TODO(bogdando) use the format provided by RFCSysLogHandler
-                #   after existing syslog format deprecation in J
-                if CONF.use_syslog_rfc_format:
-                    syslog = RFCSysLogHandler(address='/dev/log',
-                                              facility=facility)
-                else:
-                    syslog = logging.handlers.SysLogHandler(address='/dev/log',
-                                                            facility=facility)
-                log_root.addHandler(syslog)
-                syslog_ready = True
-            except socket.error:
-                if CONF.syslog_connect_retries <= 0:
-                    log_root.error(_('Connection to syslog failed and no '
-                                     'retry attempts requested'))
-                    break
-
-                if retries:
-                    log_root.info(_('Connection to syslog failed - '
-                                    'retrying in 5 seconds'))
-                    retries -= 1
-                else:
-                    log_root.error(_('Connection to syslog failed and '
-                                     'max retry attempts reached'))
-                    break
-
-                time.sleep(5)
+        try:
+            facility = _find_facility_from_conf()
+            # TODO(bogdando) use the format provided by RFCSysLogHandler
+            #   after existing syslog format deprecation in J
+            if CONF.use_syslog_rfc_format:
+                syslog = RFCSysLogHandler(address='/dev/log',
+                                          facility=facility)
             else:
-                break
+                syslog = logging.handlers.SysLogHandler(address='/dev/log',
+                                                        facility=facility)
+            log_root.addHandler(syslog)
+        except socket.error:
+            log_root.error('Unable to add syslog handler. Verify that syslog'
+                           'is running.')
 
-        if not syslog_ready:
-            log_root.error(_('Unable to add syslog handler. Verify that '
-                             'syslog is running.'))
 
 _loggers = {}
 
