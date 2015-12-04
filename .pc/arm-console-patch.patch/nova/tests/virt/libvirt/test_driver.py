@@ -1149,7 +1149,7 @@ class LibvirtConnTestCase(test.TestCase):
         self.assertEqual(1, cfg.vcpus)
         self.assertEqual(vm_mode.EXE, cfg.os_type)
         self.assertEqual("/sbin/init", cfg.os_init_path)
-        self.assertEqual("console=tty0 console=ttyS0 console=ttyAMA0", cfg.os_cmdline)
+        self.assertEqual("console=tty0 console=ttyS0", cfg.os_cmdline)
         self.assertIsNone(cfg.os_root)
         self.assertEqual(3, len(cfg.devices))
         self.assertIsInstance(cfg.devices[0],
@@ -1174,7 +1174,7 @@ class LibvirtConnTestCase(test.TestCase):
         self.assertEqual(1, cfg.vcpus)
         self.assertEqual(vm_mode.EXE, cfg.os_type)
         self.assertEqual("/sbin/init", cfg.os_init_path)
-        self.assertEqual("console=tty0 console=ttyS0 console=ttyAMA0", cfg.os_cmdline)
+        self.assertEqual("console=tty0 console=ttyS0", cfg.os_cmdline)
         self.assertIsNone(cfg.os_root)
         self.assertEqual(3, len(cfg.devices))
         self.assertIsInstance(cfg.devices[0],
@@ -7918,54 +7918,6 @@ class LibvirtConnTestCase(test.TestCase):
                     "uuid": "875a8070-d0b9-4949-8b31-104d125c9a64"}
         # NOTE(vish): verifies destroy doesn't raise if the instance disappears
         conn._destroy(instance)
-
-    def test_private_destroy_ebusy_timeout(self):
-        # Tests that _destroy will retry 3 times to destroy the guest when an
-        # EBUSY is raised, but eventually times out and raises the libvirtError
-        ex = fakelibvirt.make_libvirtError(
-                libvirt.libvirtError,
-                ("Failed to terminate process 26425 with SIGKILL: "
-                 "Device or resource busy"),
-                error_code=libvirt.VIR_ERR_SYSTEM_ERROR,
-                int1=errno.EBUSY)
-
-        instance = self.create_instance_obj(self.context)
-        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-
-        with mock.patch.object(drvr._conn, 'lookupByName') as mock_get_domain:
-            mock_domain = mock.MagicMock()
-            mock_domain.ID.return_value = 1
-            mock_get_domain.return_value = mock_domain
-            mock_domain.destroy.side_effect = ex
-
-            self.assertRaises(libvirt.libvirtError, drvr._destroy,
-                              instance)
-
-        self.assertEqual(3, mock_domain.destroy.call_count)
-
-    def test_private_destroy_ebusy_multiple_attempt_ok(self):
-        # Tests that the _destroy attempt loop is broken when EBUSY is no
-        # longer raised.
-        ex = fakelibvirt.make_libvirtError(
-                libvirt.libvirtError,
-                ("Failed to terminate process 26425 with SIGKILL: "
-                 "Device or resource busy"),
-                error_code=libvirt.VIR_ERR_SYSTEM_ERROR,
-                int1=errno.EBUSY)
-
-        inst_info = {'state': power_state.SHUTDOWN, 'id': 1}
-        instance = self.create_instance_obj(self.context)
-        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
-
-        with mock.patch.object(drvr._conn, 'lookupByName') as mock_get_domain:
-            with mock.patch.object(drvr, 'get_info', return_value=inst_info):
-                mock_domain = mock.MagicMock()
-                mock_domain.ID.return_value = 1
-                mock_get_domain.return_value = mock_domain
-                mock_domain.destroy.side_effect = ex, None
-                drvr._destroy(instance)
-
-        self.assertEqual(2, mock_domain.destroy.call_count)
 
     def test_undefine_domain_with_not_found_instance(self):
         def fake_lookup(instance_name):
