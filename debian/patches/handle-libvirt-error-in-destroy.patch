@@ -1,0 +1,149 @@
+From fda9412065dcb97a0e0f45610cd491a4d4f9b8b4 Mon Sep 17 00:00:00 2001
+From: Matt Riedemann <mriedem@us.ibm.com>
+Date: Sun, 10 May 2015 18:46:37 -0700
+Subject: [PATCH] libvirt: handle code=38 + sigkill (ebusy) in destroy()
+Origin: https://review.openstack.org/#/c/221529/
+
+Handle the libvirt error during destroy when the sigkill fails due to an
+EBUSY. This is taken from a comment by danpb in the bug report as a
+potential workaround.
+
+Co-authored-by: Daniel Berrange (berrange@redhat.com)
+
+Closes-Bug: #1353939
+
+Conflicts:
+    (From stable/kilo)
+    nova/tests/unit/virt/libvirt/test_driver.py
+
+    NOTE (kashyapc): 'stable/kilo' branch doesn't have the
+    'libvirt_guest' object, so, adjust the below unit tests accordingly:
+
+        test_private_destroy_ebusy_timeout
+        test_private_destroy_ebusy_multiple_attempt_ok
+
+    (For stable/juno)
+    nova/tests/unit/virt/libvirt/test_driver.py
+
+    NOTE (wolsen): 'stable/juno' branch required had slightly different
+    means to access domain objects in test case, so adjust tests
+    accordingly.
+
+Change-Id: I128bf6b939fbbc85df521fd3fe23c3c6f93b1b2c
+(cherry picked from commit 3907867601d1044eaadebff68a590d176abff6cf)
+(cherry picked from commit dc6af6bf861b510834122aa75750fd784578e197)
+---
+ nova/tests/virt/libvirt/test_driver.py | 48 ++++++++++++++++++++++++++++++++++
+ nova/virt/libvirt/driver.py            | 30 ++++++++++++++++++++-
+ 2 files changed, 77 insertions(+), 1 deletion(-)
+
+diff --git a/nova/tests/virt/libvirt/test_driver.py b/nova/tests/virt/libvirt/test_driver.py
+index fff02af..dfd0afd 100644
+--- a/nova/tests/virt/libvirt/test_driver.py
++++ b/nova/tests/virt/libvirt/test_driver.py
+@@ -7901,6 +7901,54 @@ class LibvirtConnTestCase(test.TestCase):
+         # NOTE(vish): verifies destroy doesn't raise if the instance disappears
+         conn._destroy(instance)
+ 
++    def test_private_destroy_ebusy_timeout(self):
++        # Tests that _destroy will retry 3 times to destroy the guest when an
++        # EBUSY is raised, but eventually times out and raises the libvirtError
++        ex = fakelibvirt.make_libvirtError(
++                libvirt.libvirtError,
++                ("Failed to terminate process 26425 with SIGKILL: "
++                 "Device or resource busy"),
++                error_code=libvirt.VIR_ERR_SYSTEM_ERROR,
++                int1=errno.EBUSY)
++
++        instance = self.create_instance_obj(self.context)
++        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
++
++        with mock.patch.object(drvr._conn, 'lookupByName') as mock_get_domain:
++            mock_domain = mock.MagicMock()
++            mock_domain.ID.return_value = 1
++            mock_get_domain.return_value = mock_domain
++            mock_domain.destroy.side_effect = ex
++
++            self.assertRaises(libvirt.libvirtError, drvr._destroy,
++                              instance)
++
++        self.assertEqual(3, mock_domain.destroy.call_count)
++
++    def test_private_destroy_ebusy_multiple_attempt_ok(self):
++        # Tests that the _destroy attempt loop is broken when EBUSY is no
++        # longer raised.
++        ex = fakelibvirt.make_libvirtError(
++                libvirt.libvirtError,
++                ("Failed to terminate process 26425 with SIGKILL: "
++                 "Device or resource busy"),
++                error_code=libvirt.VIR_ERR_SYSTEM_ERROR,
++                int1=errno.EBUSY)
++
++        inst_info = {'state': power_state.SHUTDOWN, 'id': 1}
++        instance = self.create_instance_obj(self.context)
++        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
++
++        with mock.patch.object(drvr._conn, 'lookupByName') as mock_get_domain:
++            with mock.patch.object(drvr, 'get_info', return_value=inst_info):
++                mock_domain = mock.MagicMock()
++                mock_domain.ID.return_value = 1
++                mock_get_domain.return_value = mock_domain
++                mock_domain.destroy.side_effect = ex, None
++                drvr._destroy(instance)
++
++        self.assertEqual(2, mock_domain.destroy.call_count)
++
+     def test_undefine_domain_with_not_found_instance(self):
+         def fake_lookup(instance_name):
+             raise libvirt.libvirtError("not found")
+diff --git a/nova/virt/libvirt/driver.py b/nova/virt/libvirt/driver.py
+index 54b721e..d73dd5d 100644
+--- a/nova/virt/libvirt/driver.py
++++ b/nova/virt/libvirt/driver.py
+@@ -1006,7 +1006,7 @@ class LibvirtDriver(driver.ComputeDriver):
+         rootfs_dev = instance.system_metadata.get('rootfs_device_name')
+         disk.teardown_container(container_dir, rootfs_dev)
+ 
+-    def _destroy(self, instance):
++    def _destroy(self, instance, attempt=1):
+         try:
+             virt_dom = self._lookup_by_name(instance['name'])
+         except exception.InstanceNotFound:
+@@ -1043,6 +1043,34 @@ class LibvirtDriver(driver.ComputeDriver):
+                             instance=instance)
+                     reason = _("operation time out")
+                     raise exception.InstancePowerOffFailure(reason=reason)
++                elif errcode == libvirt.VIR_ERR_SYSTEM_ERROR:
++                    if e.get_int1() == errno.EBUSY:
++                        # NOTE(danpb): When libvirt kills a process it sends it
++                        # SIGTERM first and waits 10 seconds. If it hasn't gone
++                        # it sends SIGKILL and waits another 5 seconds. If it
++                        # still hasn't gone then you get this EBUSY error.
++                        # Usually when a QEMU process fails to go away upon
++                        # SIGKILL it is because it is stuck in an
++                        # uninterruptable kernel sleep waiting on I/O from
++                        # some non-responsive server.
++                        # Given the CPU load of the gate tests though, it is
++                        # conceivable that the 15 second timeout is too short,
++                        # particularly if the VM running tempest has a high
++                        # steal time from the cloud host. ie 15 wallclock
++                        # seconds may have passed, but the VM might have only
++                        # have a few seconds of scheduled run time.
++                        LOG.warn(_LW('Error from libvirt during destroy. '
++                                     'Code=%(errcode)s Error=%(e)s; '
++                                     'attempt %(attempt)d of 3'),
++                                 {'errcode': errcode, 'e': e,
++                                  'attempt': attempt},
++                                 instance=instance)
++                        with excutils.save_and_reraise_exception() as ctxt:
++                            # Try up to 3 times before giving up.
++                            if attempt < 3:
++                                ctxt.reraise = False
++                                self._destroy(instance, attempt + 1)
++                                return
+ 
+                 if not is_okay:
+                     with excutils.save_and_reraise_exception():
+-- 
+2.6.2
+

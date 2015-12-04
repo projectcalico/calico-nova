@@ -1,0 +1,157 @@
+From 75eff13d08bd11826ae2e0638a8ca536b705ea2a Mon Sep 17 00:00:00 2001
+From: James Page <james.page@ubuntu.com>
+Date: Fri, 31 Oct 2014 14:18:54 +0000
+Subject: [PATCH] Rate limit power sync tasks to avoid overloading
+
+Performing all database <-> hypervisor period power state syncs in
+parallel is a bad idea as this increases the loading on the
+message broker and the conductors inline with the number of instances
+running in the cloud.
+
+Provide a configuration option and spawn a sync manager thread to
+rate limit the number of parallel sync activities happening during
+the _sync_power_states period task.
+
+DocImpact
+
+Change-Id: I3d518249e6513d60b61d3877e7f647e82df60ed0
+Closes-bug: #1388077
+
+Conflicts:
+	nova/compute/manager.py
+	nova/tests/unit/compute/test_compute_xen.py
+
+Note: Test file name is different in this patch vs cherry-picked version
+      (e.g. It is nova/tests/compute/test_compute_xen.py in juno.)
+---
+ nova/compute/manager.py                     | 66 ++++++++++++++++-----------
+ nova/tests/compute/eventlet_utils.py        |  5 +++
+ nova/tests/unit/compute/test_compute_xen.py | 70 +++++++++++++++++++++++++++++
+ 3 files changed, 114 insertions(+), 27 deletions(-)
+ create mode 100644 nova/tests/unit/compute/test_compute_xen.py
+
+--- a/nova/compute/manager.py
++++ b/nova/compute/manager.py
+@@ -142,6 +142,11 @@
+                     'Setting this to 0 will disable, but this will change in '
+                     'Juno to mean "run at the default rate".'),
+     # TODO(gilliard): Clean the above message after the K release
++    cfg.IntOpt('sync_power_state_concurrency',
++               default=20,
++               help='The level of concurrency that will be used during sync '
++                    'of power states between the database and the '
++                    'hypervisor.'),
+     cfg.IntOpt("heal_instance_info_cache_interval",
+                default=60,
+                help="Number of seconds between instance info_cache self "
+@@ -619,7 +624,8 @@
+         self.scheduler_rpcapi = scheduler_rpcapi.SchedulerAPI()
+         self._resource_tracker_dict = {}
+         self.instance_events = InstanceEvents()
+-        self._sync_power_pool = eventlet.GreenPool()
++        self._sync_power_pool = (
++            eventlet.GreenPool(CONF.sync_power_state_concurrency))
+         self._syncs_in_progress = {}
+ 
+         super(ComputeManager, self).__init__(service_name="compute",
+@@ -5715,33 +5721,39 @@
+                      {'num_db_instances': num_db_instances,
+                       'num_vm_instances': num_vm_instances})
+ 
+-        def _sync(db_instance):
+-            # NOTE(melwitt): This must be synchronized as we query state from
+-            #                two separate sources, the driver and the database.
+-            #                They are set (in stop_instance) and read, in sync.
+-            @utils.synchronized(db_instance.uuid)
+-            def query_driver_power_state_and_sync():
+-                self._query_driver_power_state_and_sync(context, db_instance)
++        def _sync_manager():
++            def _sync(db_instance):
++                # NOTE(melwitt):
++                # This must be synchronized as we query state from
++                # two separate sources, the driver and the database.
++                # They are set (in stop_instance) and read, in sync.
++                @utils.synchronized(db_instance.uuid)
++                def query_driver_power_state_and_sync():
++                    self._query_driver_power_state_and_sync(context,
++                                                            db_instance)
+ 
+-            try:
+-                query_driver_power_state_and_sync()
+-            except Exception:
+-                LOG.exception(_LE("Periodic sync_power_state task had an "
+-                                  "error while processing an instance."),
+-                              instance=db_instance)
+-
+-            self._syncs_in_progress.pop(db_instance.uuid)
+-
+-        for db_instance in db_instances:
+-            # process syncs asynchronously - don't want instance locking to
+-            # block entire periodic task thread
+-            uuid = db_instance.uuid
+-            if uuid in self._syncs_in_progress:
+-                LOG.debug('Sync already in progress for %s' % uuid)
+-            else:
+-                LOG.debug('Triggering sync for uuid %s' % uuid)
+-                self._syncs_in_progress[uuid] = True
+-                self._sync_power_pool.spawn_n(_sync, db_instance)
++                try:
++                    query_driver_power_state_and_sync()
++                except Exception:
++                    LOG.exception(_LE("Periodic sync_power_state task had an "
++                                      "error while processing an instance."),
++                                  instance=db_instance)
++
++                self._syncs_in_progress.pop(db_instance.uuid)
++
++            for db_instance in db_instances:
++                uuid = db_instance.uuid
++                if uuid in self._syncs_in_progress:
++                    LOG.debug('Sync already in progress for %s' % uuid)
++                else:
++                    LOG.debug('Triggering sync for uuid %s' % uuid)
++                    self._syncs_in_progress[uuid] = True
++                    self._sync_power_pool.spawn_n(_sync, db_instance)
++
++        # process syncs asynchronously via the sync manager as we
++        # don't want instance locking to block the entire periodic
++        # task thread
++        eventlet.spawn_n(_sync_manager)
+ 
+     def _query_driver_power_state_and_sync(self, context, db_instance):
+         if db_instance.task_state is not None:
+--- a/nova/tests/compute/eventlet_utils.py
++++ b/nova/tests/compute/eventlet_utils.py
+@@ -15,6 +15,11 @@
+ import eventlet
+ 
+ 
++def sync_spawn_n(func, *args, **kwargs):
++    """Synchronous spawn_n for testing threaded code."""
++    func(*args, **kwargs)
++
++
+ class SyncPool(eventlet.GreenPool):
+     """Synchronous pool for testing threaded code without adding sleep
+     waits.
+--- a/nova/tests/compute/test_compute_xen.py
++++ b/nova/tests/compute/test_compute_xen.py
+@@ -12,6 +12,7 @@
+ 
+ """Tests for expectations of behaviour from the Xen driver."""
+ 
++import mock
+ from oslo.config import cfg
+ 
+ from nova.compute import power_state
+@@ -42,7 +43,9 @@
+         # execute power syncing synchronously for testing:
+         self.compute._sync_power_pool = eventlet_utils.SyncPool()
+ 
+-    def test_sync_power_states_instance_not_found(self):
++    @mock.patch('eventlet.spawn_n')
++    def test_sync_power_states_instance_not_found(self, _spawn_n):
++        _spawn_n.side_effect = eventlet_utils.sync_spawn_n
+         db_instance = fake_instance.fake_db_instance()
+         ctxt = context.get_admin_context()
+         instance_list = instance_obj._make_instance_list(ctxt,
