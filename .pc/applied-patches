@@ -7,3 +7,4 @@ disable-websockify-tests.patch
 neutron-floating-ip-list.patch
 add-support-for-syslog-connect-retries.patch
 handle-libvirt-error-in-destroy.patch
+calico.patch
