@@ -1,3 +1,9 @@
+nova (1:2014.2.4-0ubuntu1~cloud4) trusty-juno; urgency=medium
+
+  * d/control: Add missing dependencies to Depends (LP: #1524177).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Wed, 09 Dec 2015 10:33:50 -0500
+
 nova (1:2014.2.4-0ubuntu1~cloud3) trusty-juno; urgency=medium
 
   * d/control: Add python-rfc3986 to Depends.
