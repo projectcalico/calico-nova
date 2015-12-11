@@ -1,8 +1,14 @@
-nova (1:2014.2.4-0ubuntu1~cloud3calico1.0.0+1) trusty; urgency=medium
+nova (1:2014.2.4-0ubuntu1~cloud4calico1.0.0+1) trusty; urgency=medium
 
   * Rebase Calico patches onto new upstream release
 
  -- Matt Dupre <matt@projectcalico.org>  Fri, 04 Dec 2015 12:19:33 +0000
+
+nova (1:2014.2.4-0ubuntu1~cloud4) trusty-juno; urgency=medium
+
+  * d/control: Add missing dependencies to Depends (LP: #1524177).
+
+ -- Corey Bryant <corey.bryant@canonical.com>  Wed, 09 Dec 2015 10:33:50 -0500
 
 nova (1:2014.2.4-0ubuntu1~cloud3) trusty-juno; urgency=medium
 
