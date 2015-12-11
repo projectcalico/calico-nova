@@ -2,7 +2,7 @@ nova (1:2014.2.4-0ubuntu1~cloud4calico1.0.0+1) trusty; urgency=medium
 
   * Rebase Calico patches onto new upstream release
 
- -- Matt Dupre <matt@projectcalico.org>  Fri, 04 Dec 2015 12:19:33 +0000
+ -- Matt Dupre <matt@projectcalico.org>  Fri, 11 Dec 2015 11:18:48 +0000
 
 nova (1:2014.2.4-0ubuntu1~cloud4) trusty-juno; urgency=medium
 
