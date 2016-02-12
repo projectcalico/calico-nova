@@ -1,4 +1,11 @@
-nova (1:2015.1.1-1~u14.04+mos19662) mos7.0; urgency=medium
+nova (1:2015.1.1-1~u14.04+mos19665) mos7.0; urgency=medium
+
+  [ Matthew Booth ]
+  * a9947ca Don't check flavor disk size when booting from volume
+
+  [ Gary Kotton ]
+  * 382dda8 Metadata: support proxying loadbalancers
+  * 0df646e Neutron: add in API method for updating VNIC index
 
   [ mos-infra-ci ]
   * e5b9214 Merge "Change auth_plugin for neutron_client" into
@@ -25,16 +32,8 @@ nova (1:2015.1.1-1~u14.04+mos19662) mos7.0; urgency=medium
   [ Jenkins ]
   * d8bb068 Merge "Fix live-migrations usage of the wrong connector
     information" into stable/kilo
-  * d2ec5f2 Merge "libvirt: Kill rsync/scp processes before deleting
-    instance" into stable/kilo
 
-  [ Anthony Lee ]
-  * 587092c Fix live-migrations usage of the wrong connector information
-
-  [ OpenStack Proposal Bot ]
-  * c1ad497 Updated from global requirements
-
- -- mos-infra-ci <mos-infra-ci@review.fuel-infra.org>  Fri, 04 Sep 2015 19:07:45 +0000
+ -- Matthew Booth <mbooth@redhat.com>  Mon, 28 Dec 2015 14:28:41 +0000
 
 nova (1:2015.1.0-1~u14.04+mos5) mos7.0; urgency=medium
 
