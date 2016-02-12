@@ -1,6 +1,9 @@
 CHANGES
 =======
 
+* Don't check flavor disk size when booting from volume
+* Metadata: support proxying loadbalancers
+* Neutron: add in API method for updating VNIC index
 * Change auth_plugin for neutron_client
 * Live Migration: add sleep on pre live migration at destination
 * Fixed fail when user tries to delete images in resize state
