@@ -1143,6 +1143,8 @@ class VMwareVMOpsTestCase(test.NoDBTestCase):
         self.assertEqual(expected_methods, recorded_methods)
 
     @mock.patch(
+        'nova.virt.vmwareapi.vmops.VMwareVMOps._update_vnic_index')
+    @mock.patch(
         'nova.virt.vmwareapi.vmops.VMwareVMOps._configure_config_drive')
     @mock.patch('nova.virt.vmwareapi.ds_util.get_datastore')
     @mock.patch(
@@ -1178,6 +1180,7 @@ class VMwareVMOpsTestCase(test.NoDBTestCase):
                    mock_get_datacenter_ref_and_name,
                    mock_get_datastore,
                    mock_configure_config_drive,
+                   mock_update_vnic_index,
                    block_device_info=None,
                    power_on=True,
                    extra_specs=None,
@@ -1312,6 +1315,8 @@ class VMwareVMOpsTestCase(test.NoDBTestCase):
                 mock_configure_config_drive.assert_called_once_with(
                         self._instance, 'fake_vm_ref', self._dc_info,
                         self._ds, 'fake_files', 'password')
+            mock_update_vnic_index.assert_called_once_with(
+                        self._context, self._instance, network_info)
 
     @mock.patch.object(ds_util, 'get_datastore')
     @mock.patch.object(vmops.VMwareVMOps, 'get_datacenter_ref_and_name')
