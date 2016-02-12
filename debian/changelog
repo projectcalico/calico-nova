@@ -1,11 +1,14 @@
-nova (1:2015.1.1-1~u14.04+mos19664.1) UNRELEASED; urgency=medium
+nova (1:2015.1.1-1~u14.04+mos19665.1) UNRELEASED; urgency=medium
 
   * Non-maintainer upload.
   * Bump version number for calico patches
 
  -- ubuntu <ubuntu@calico-jenkins-2>  Thu, 19 Nov 2015 16:37:01 +0000
 
-nova (1:2015.1.1-1~u14.04+mos19664) mos7.0; urgency=medium
+nova (1:2015.1.1-1~u14.04+mos19665) mos7.0; urgency=medium
+
+  [ Matthew Booth ]
+  * a9947ca Don't check flavor disk size when booting from volume
 
   [ Gary Kotton ]
   * 382dda8 Metadata: support proxying loadbalancers
@@ -36,10 +39,8 @@ nova (1:2015.1.1-1~u14.04+mos19664) mos7.0; urgency=medium
   [ Jenkins ]
   * d8bb068 Merge "Fix live-migrations usage of the wrong connector
     information" into stable/kilo
-  * d2ec5f2 Merge "libvirt: Kill rsync/scp processes before deleting
-    instance" into stable/kilo
 
- -- Gary Kotton <gkotton@vmware.com>  Mon, 19 Oct 2015 12:49:55 +0000
+ -- Matthew Booth <mbooth@redhat.com>  Mon, 28 Dec 2015 14:28:41 +0000
 
 nova (1:2015.1.0-1~u14.04+mos5) mos7.0; urgency=medium
 
