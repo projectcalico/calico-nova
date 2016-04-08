@@ -7,3 +7,4 @@ skip-cinder-tests.patch
 #rate-limit-power-syncs.patch
 skip-ubuntu-tests.patch
 skip-proxy-test.patch
+calico.patch
