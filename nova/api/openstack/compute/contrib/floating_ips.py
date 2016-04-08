@@ -46,12 +46,7 @@ def _translate_floating_ip_view(floating_ip):
     except (TypeError, KeyError, AttributeError):
         result['fixed_ip'] = None
     try:
-        # NOTE(jamespage) neutron based data uses a slight different
-        # underlying data format - use that if present
-        if 'instance' in floating_ip:
-            result['instance_id'] = floating_ip['instance']['uuid']
-        else:
-            result['instance_id'] = floating_ip['fixed_ip']['instance_uuid']
+        result['instance_id'] = floating_ip['fixed_ip']['instance_uuid']
     except (TypeError, KeyError, AttributeError):
         result['instance_id'] = None
     return {'floating_ip': result}
