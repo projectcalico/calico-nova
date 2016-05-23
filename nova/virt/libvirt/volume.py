@@ -642,7 +642,6 @@ class LibvirtISCSIVolumeDriver(LibvirtBaseVolumeDriver):
 
         if not devices:
             # disconnect if no other multipath devices
-            self._remove_multipath_device_descriptor(multipath_device)
             self._disconnect_mpath(iscsi_properties, ips_iqns)
             return
 
@@ -663,6 +662,7 @@ class LibvirtISCSIVolumeDriver(LibvirtBaseVolumeDriver):
         if not in_use:
             # disconnect if no other multipath devices with same iqn
             self._disconnect_mpath(iscsi_properties, ips_iqns)
+            return
         elif multipath_device not in devices:
             # delete the devices associated w/ the unused multipath
             self._delete_mpath(iscsi_properties, multipath_device, ips_iqns)

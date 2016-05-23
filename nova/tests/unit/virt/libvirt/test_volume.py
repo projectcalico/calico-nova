@@ -523,10 +523,13 @@ Setting up iSCSI targets: unused
         self.stubs.Set(libvirt_driver, '_get_multipath_device_name',
                        lambda x: fake_multipath_device)
 
-        fake_rm_mp_dev_desc = mock.MagicMock()
+        def fake_disconnect_volume_multipath_iscsi(iscsi_properties,
+                                                   multipath_device):
+            if fake_multipath_device != multipath_device:
+                raise Exception('Invalid multipath_device.')
 
-        self.stubs.Set(libvirt_driver, '_remove_multipath_device_descriptor',
-                       fake_rm_mp_dev_desc)
+        self.stubs.Set(libvirt_driver, '_disconnect_volume_multipath_iscsi',
+                       fake_disconnect_volume_multipath_iscsi)
         with mock.patch.object(os.path, 'exists', return_value=True):
             vol = {'id': 1, 'name': self.name}
             connection_info = self.iscsi_connection(vol, self.location,
@@ -536,50 +539,6 @@ Setting up iSCSI targets: unused
             self.assertEqual(fake_multipath_id,
                              connection_info['data']['multipath_id'])
             libvirt_driver.disconnect_volume(connection_info, "fake")
-            fake_rm_mp_dev_desc.assert_called_with(fake_multipath_device)
-
-    def test_disconnect_volume_multipath_iscsi_not_in_use(self):
-        libvirt_driver = volume.LibvirtISCSIVolumeDriver(self.fake_conn)
-        libvirt_driver.use_multipath = True
-        self.stubs.Set(libvirt_driver, '_run_iscsiadm_bare',
-                       lambda x, check_exit_code: ('',))
-        self.stubs.Set(libvirt_driver, '_rescan_iscsi', lambda: None)
-        self.stubs.Set(libvirt_driver, '_get_host_device', lambda x: None)
-        self.stubs.Set(libvirt_driver, '_rescan_multipath', lambda: None)
-
-        fake_multipath_id = 'fake_multipath_id'
-        fake_multipath_device = '/dev/mapper/%s' % fake_multipath_id
-
-        fake_remove_multipath_device_descriptor = mock.MagicMock()
-        fake_disconnect_mpath = mock.MagicMock()
-
-        self.stubs.Set(libvirt_driver, '_get_multipath_device_name',
-                       lambda x: fake_multipath_device)
-
-        self.stubs.Set(libvirt_driver,
-                       '_remove_multipath_device_descriptor',
-                       fake_remove_multipath_device_descriptor)
-
-        self.stubs.Set(libvirt_driver,
-                       '_disconnect_mpath', fake_disconnect_mpath)
-
-        self.stubs.Set(libvirt_driver,
-                       '_get_target_portals_from_iscsiadm_output',
-                       lambda x: [[self.location, self.iqn]])
-
-        with contextlib.nested(
-                mock.patch.object(os.path, 'exists', return_value=True),
-                mock.patch.object(libvirt_driver, '_connect_to_iscsi_portal')
-        ):
-            vol = {'id': 1, 'name': self.name}
-            connection_info = self.iscsi_connection(vol, self.location,
-                                                    self.iqn)
-            libvirt_driver.connect_volume(connection_info,
-                                          self.disk_info)
-            libvirt_driver.disconnect_volume(connection_info, "fake")
-
-            fake_remove_multipath_device_descriptor.assert_called_with(
-                fake_multipath_device)
 
     def test_sanitize_log_run_iscsiadm(self):
         # Tests that the parameters to the _run_iscsiadm function are sanitized
@@ -815,7 +774,6 @@ Setting up iSCSI targets: unused
                              ('iscsiadm', '-m', 'discoverydb',
                               '-t', 'sendtargets',
                               '-p', self.location, '--discover'),
-                             ('multipath', '-f', 'foo'),
                              ('multipath', '-r')]
         self.assertEqual(self.executes, expected_commands)
 

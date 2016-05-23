@@ -1,9 +1,0 @@
-arm-console-patch.patch
-update-run-tests.patch
-disable-websockify-tests.patch
-neutron-floating-ip-list.patch
-skip-cinder-tests.patch
-skip-ubuntu-tests.patch
-skip-proxy-test.patch
-fix-iscsi-detach.patch
-calico.patch
