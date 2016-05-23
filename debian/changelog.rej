@@ -1,0 +1,14 @@
+--- debian/changelog	2016-03-18 12:58:03.000000000 -0700
++++ debian/changelog	2016-04-04 14:31:14.000000000 -0700
+@@ -1,3 +1,11 @@
++nova (1:2015.1.3-0ubuntu1~cloud1) trusty-kilo; urgency=medium
++
++  * d/p/fix-iscsi-detach.patch (LP: #1374999)
++    - Clear latest path for last remaining iscsi disk to ensure
++      disk is properly removed.
++
++ -- Billy Olsen <billy.olsen@canonical.com>  Mon, 04 Apr 2016 14:28:40 -0700
++
+ nova (1:2015.1.3-0ubuntu1) trusty-kilo; urgency=medium
+ 
+   * New upstream stable release (LP: #1559215).

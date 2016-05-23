@@ -1,0 +1,128 @@
+From 768da20fab6f84a8c34a089767b87924045c905a Mon Sep 17 00:00:00 2001
+From: Rafael David Tinoco <rafael.tinoco@canonical.com>
+Date: Tue, 18 Nov 2014 18:03:00 +0000
+Reviewed-By: Billy Olsen <billy.olsen@canonical.com>,
+             Jorge Niedbalski <jorge.niedbalski@canonical.com>,
+             Felipe Reyes <felipe.reyes@canonical.com>
+Forwarded: https://review.openstack.org/#/c/135382/
+Bug: https://bugs.launchpad.net/nova/+bug/1374999
+Subject: [PATCH 1/1] Detach iSCSI latest path for latest disk
+
+The logic responsible to disconnect iscsi volumes wasn't clearing
+latest path for the latest remaining disk. With this change,
+latest disk path is removed right before iscsi disk is disconnected.
+
+Also, the device descriptor was not removed if the iqn are different
+and multipath is enabled.
+
+Change-Id: Ib6f6cea40cc3a14a3a443b157d0decba5602bf13
+Closes-Bug: 1374999
+Closes-Bug: 1452032
+---
+ nova/tests/unit/virt/libvirt/test_volume.py | 54 +++++++++++++++++++++++++----
+ nova/virt/libvirt/volume.py                 |  2 +-
+ 2 files changed, 49 insertions(+), 7 deletions(-)
+
+diff --git a/nova/tests/unit/virt/libvirt/test_volume.py b/nova/tests/unit/virt/libvirt/test_volume.py
+index c677fab..1db05d1 100644
+--- a/nova/tests/unit/virt/libvirt/test_volume.py
++++ b/nova/tests/unit/virt/libvirt/test_volume.py
+@@ -523,13 +523,10 @@ Setting up iSCSI targets: unused
+         self.stubs.Set(libvirt_driver, '_get_multipath_device_name',
+                        lambda x: fake_multipath_device)
+ 
+-        def fake_disconnect_volume_multipath_iscsi(iscsi_properties,
+-                                                   multipath_device):
+-            if fake_multipath_device != multipath_device:
+-                raise Exception('Invalid multipath_device.')
++        fake_rm_mp_dev_desc = mock.MagicMock()
+ 
+-        self.stubs.Set(libvirt_driver, '_disconnect_volume_multipath_iscsi',
+-                       fake_disconnect_volume_multipath_iscsi)
++        self.stubs.Set(libvirt_driver, '_remove_multipath_device_descriptor',
++                       fake_rm_mp_dev_desc)
+         with mock.patch.object(os.path, 'exists', return_value=True):
+             vol = {'id': 1, 'name': self.name}
+             connection_info = self.iscsi_connection(vol, self.location,
+@@ -539,6 +536,50 @@ Setting up iSCSI targets: unused
+             self.assertEqual(fake_multipath_id,
+                              connection_info['data']['multipath_id'])
+             libvirt_driver.disconnect_volume(connection_info, "fake")
++            fake_rm_mp_dev_desc.assert_called_with(fake_multipath_device)
++
++    def test_disconnect_volume_multipath_iscsi_not_in_use(self):
++        libvirt_driver = volume.LibvirtISCSIVolumeDriver(self.fake_conn)
++        libvirt_driver.use_multipath = True
++        self.stubs.Set(libvirt_driver, '_run_iscsiadm_bare',
++                       lambda x, check_exit_code: ('',))
++        self.stubs.Set(libvirt_driver, '_rescan_iscsi', lambda: None)
++        self.stubs.Set(libvirt_driver, '_get_host_device', lambda x: None)
++        self.stubs.Set(libvirt_driver, '_rescan_multipath', lambda: None)
++
++        fake_multipath_id = 'fake_multipath_id'
++        fake_multipath_device = '/dev/mapper/%s' % fake_multipath_id
++
++        fake_remove_multipath_device_descriptor = mock.MagicMock()
++        fake_disconnect_mpath = mock.MagicMock()
++
++        self.stubs.Set(libvirt_driver, '_get_multipath_device_name',
++                       lambda x: fake_multipath_device)
++
++        self.stubs.Set(libvirt_driver,
++                       '_remove_multipath_device_descriptor',
++                       fake_remove_multipath_device_descriptor)
++
++        self.stubs.Set(libvirt_driver,
++                       '_disconnect_mpath', fake_disconnect_mpath)
++
++        self.stubs.Set(libvirt_driver,
++                       '_get_target_portals_from_iscsiadm_output',
++                       lambda x: [[self.location, self.iqn]])
++
++        with contextlib.nested(
++                mock.patch.object(os.path, 'exists', return_value=True),
++                mock.patch.object(libvirt_driver, '_connect_to_iscsi_portal')
++        ):
++            vol = {'id': 1, 'name': self.name}
++            connection_info = self.iscsi_connection(vol, self.location,
++                                                    self.iqn)
++            libvirt_driver.connect_volume(connection_info,
++                                          self.disk_info)
++            libvirt_driver.disconnect_volume(connection_info, "fake")
++
++            fake_remove_multipath_device_descriptor.assert_called_with(
++                fake_multipath_device)
+ 
+     def test_sanitize_log_run_iscsiadm(self):
+         # Tests that the parameters to the _run_iscsiadm function are sanitized
+@@ -774,6 +815,7 @@ Setting up iSCSI targets: unused
+                              ('iscsiadm', '-m', 'discoverydb',
+                               '-t', 'sendtargets',
+                               '-p', self.location, '--discover'),
++                             ('multipath', '-f', 'foo'),
+                              ('multipath', '-r')]
+         self.assertEqual(self.executes, expected_commands)
+ 
+diff --git a/nova/virt/libvirt/volume.py b/nova/virt/libvirt/volume.py
+index 59e3835..aeed097 100644
+--- a/nova/virt/libvirt/volume.py
++++ b/nova/virt/libvirt/volume.py
+@@ -642,6 +642,7 @@ class LibvirtISCSIVolumeDriver(LibvirtBaseVolumeDriver):
+ 
+         if not devices:
+             # disconnect if no other multipath devices
++            self._remove_multipath_device_descriptor(multipath_device)
+             self._disconnect_mpath(iscsi_properties, ips_iqns)
+             return
+ 
+@@ -662,7 +663,6 @@ class LibvirtISCSIVolumeDriver(LibvirtBaseVolumeDriver):
+         if not in_use:
+             # disconnect if no other multipath devices with same iqn
+             self._disconnect_mpath(iscsi_properties, ips_iqns)
+-            return
+         elif multipath_device not in devices:
+             # delete the devices associated w/ the unused multipath
+             self._delete_mpath(iscsi_properties, multipath_device, ips_iqns)
+-- 
+2.7.4
+
