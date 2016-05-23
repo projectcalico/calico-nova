@@ -232,7 +232,6 @@ class TestWSGIServerWithSSL(test.NoDBTestCase):
                 ssl_key_file=os.path.join(SSL_CERT_DIR, 'privatekey.key'))
 
     def test_ssl_server(self):
-        self.skipTest("Disabled on Ubuntu due to failure in LP buildd")
 
         def test_app(env, start_response):
             start_response('200 OK', {})
@@ -253,7 +252,6 @@ class TestWSGIServerWithSSL(test.NoDBTestCase):
         fake_ssl_server.wait()
 
     def test_two_servers(self):
-        self.skipTest("Disabled on Ubuntu due to failure in LP buildd")
 
         def test_app(env, start_response):
             start_response('200 OK', {})
