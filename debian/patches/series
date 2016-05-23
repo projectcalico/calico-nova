@@ -8,3 +8,4 @@ skip-cinder-tests.patch
 skip-ubuntu-tests.patch
 skip-proxy-test.patch
 fix-iscsi-detach.patch
+calico.patch
